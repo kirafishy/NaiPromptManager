@@ -1,5 +1,5 @@
 
-name = "nai_prompt_manager"
+name = "nai-prompt-manager"
 compatibility_date = "2024-04-01"
 pages_build_output_dir = "dist"
 
