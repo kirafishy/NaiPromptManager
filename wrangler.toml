@@ -15,3 +15,4 @@ pages_build_output_dir = "dist"
 # 这里的变量用于本地开发，生产环境请在 Pages Dashboard 的 Settings -> Environment variables 中设置
 NAI_API_KEY = ""
 MASTER_KEY = "admin888"
+DB = "nai-db"
