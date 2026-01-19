@@ -1,6 +1,7 @@
 
-name = "nai-prompt-manager"
+name = "naipromptmanager"
 compatibility_date = "2024-04-01"
+pages_build_output_dir = "dist"
 
 # 配置 D1 数据库 (Cloudflare Pages Dashboard 中也需要绑定)
 [[d1_databases]]
