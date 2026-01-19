@@ -1,13 +1,16 @@
 
+
 import React, { ReactNode } from 'react';
 
 interface LayoutProps {
   children: ReactNode;
   onNavigate: (view: 'list' | 'edit' | 'library' | 'inspiration' | 'admin', id?: string) => void;
   currentView: string;
+  isDark: boolean;
+  toggleTheme: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, isDark, toggleTheme }) => {
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300">
       {/* Sidebar */}
@@ -69,8 +72,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           </button>
         </nav>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-          <div className="text-xs text-gray-500 dark:text-gray-600 text-center md:text-left">v0.2.7 Pro</div>
+        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex flex-col gap-3">
+          <button 
+                onClick={toggleTheme} 
+                className="w-full flex items-center justify-center md:justify-start p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          >
+              <span className="text-xl mr-0 md:mr-2">{isDark ? '🌙' : '☀️'}</span>
+              <span className="hidden md:block text-sm font-medium">{isDark ? '切换亮色' : '切换深色'}</span>
+          </button>
+          <div className="text-xs text-gray-500 dark:text-gray-600 text-center md:text-left">v0.2.8 Pro</div>
         </div>
       </aside>
 

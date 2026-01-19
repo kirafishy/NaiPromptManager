@@ -1,5 +1,4 @@
-
-import { PromptVersion } from '../types';
+import { PromptChain } from '../types';
 
 /**
  * Extracts variable names from a string (e.g., "{character}").
@@ -18,18 +17,18 @@ export const extractVariables = (text: string): string[] => {
  * Compiles the final prompt string by combining base, modules, and substituting variables.
  */
 export const compilePrompt = (
-  version: PromptVersion,
+  chain: Pick<PromptChain, 'basePrompt' | 'modules'>,
   variables: Record<string, string>,
   activeModulesOnly: boolean = true
 ): string => {
   let promptParts: string[] = [];
 
   // 1. Add Base Prompt
-  if (version.basePrompt) promptParts.push(version.basePrompt);
+  if (chain.basePrompt) promptParts.push(chain.basePrompt);
 
   // 2. Add Modules
-  if (version.modules) {
-      version.modules.forEach((mod) => {
+  if (chain.modules) {
+      chain.modules.forEach((mod) => {
         if (!activeModulesOnly || mod.isActive) {
           promptParts.push(mod.content);
         }
@@ -53,10 +52,10 @@ export const compilePrompt = (
 /**
  * Identify all unique variables across base prompt and all modules
  */
-export const getAllVariablesInVersion = (version: PromptVersion): string[] => {
+export const getAllVariablesInVersion = (chain: Pick<PromptChain, 'basePrompt' | 'modules'>): string[] => {
   const allText = [
-    version.basePrompt,
-    ...(version.modules || []).map(m => m.content)
+    chain.basePrompt,
+    ...(chain.modules || []).map(m => m.content)
   ].join(' ');
   return extractVariables(allText);
 };

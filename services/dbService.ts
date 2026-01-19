@@ -1,20 +1,53 @@
 
-import { PromptChain, PromptVersion, ChainWithVersion, Artist, Inspiration } from '../types';
+import { PromptChain, Artist, Inspiration, User } from '../types';
 import { api } from './api';
 
 class DBService {
+  // --- Auth ---
+  async login(username: string, password: string): Promise<{success: boolean, user: User}> {
+      return await api.post('/auth/login', { username, password });
+  }
+
+  async logout(): Promise<void> {
+      await api.post('/auth/logout', {});
+  }
+
+  async getMe(): Promise<User> {
+      return await api.get('/auth/me');
+  }
+
+  async updatePassword(password: string): Promise<void> {
+      await api.put('/users/password', { password });
+  }
+
+  // --- Users (Admin) ---
+  async createUser(username: string, password: string): Promise<void> {
+      await api.post('/users', { username, password });
+  }
+
+  async getUsers(): Promise<User[]> {
+      return await api.get('/users');
+  }
+
+  async deleteUser(id: string): Promise<void> {
+      await api.delete(`/users/${id}`);
+  }
+
   // --- Chains ---
-  async getAllChains(): Promise<ChainWithVersion[]> {
+  async getAllChains(): Promise<PromptChain[]> {
     return await api.get('/chains');
   }
 
-  async getChainById(id: string): Promise<ChainWithVersion | null> {
-    const chains = await this.getAllChains();
-    return chains.find(c => c.id === id) || null;
-  }
-
-  async createChain(name: string, description: string): Promise<string> {
-    const res = await api.post('/chains', { name, description });
+  async createChain(name: string, description: string, copyFrom?: PromptChain): Promise<string> {
+    const payload: any = { name, description };
+    if (copyFrom) {
+        payload.basePrompt = copyFrom.basePrompt;
+        payload.negativePrompt = copyFrom.negativePrompt;
+        payload.modules = copyFrom.modules;
+        payload.params = copyFrom.params;
+        payload.previewImage = copyFrom.previewImage;
+    }
+    const res = await api.post('/chains', payload);
     return res.id;
   }
 
@@ -24,12 +57,6 @@ class DBService {
 
   async deleteChain(id: string): Promise<void> {
     await api.delete(`/chains/${id}`);
-  }
-
-  // --- Versions ---
-  async saveNewVersion(chainId: string, data: Partial<PromptVersion>): Promise<PromptVersion> {
-    // 后端会自动处理版本号递增逻辑
-    return await api.post(`/chains/${chainId}/versions`, data);
   }
 
   // --- Artists ---
@@ -54,8 +81,16 @@ class DBService {
     await api.post('/inspirations', inspiration);
   }
 
+  async updateInspiration(id: string, updates: Partial<Inspiration>): Promise<void> {
+      await api.put(`/inspirations/${id}`, updates);
+  }
+
   async deleteInspiration(id: string): Promise<void> {
     await api.delete(`/inspirations/${id}`);
+  }
+
+  async bulkDeleteInspirations(ids: string[]): Promise<void> {
+      await api.post('/inspirations/bulk-delete', { ids });
   }
 }
 

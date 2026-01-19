@@ -1,13 +1,13 @@
+
 // Core Data Models
 
-export interface PromptChain {
+export type UserRole = 'admin' | 'user';
+
+export interface User {
   id: string;
-  name: string;
-  description: string;
-  tags: string[];
-  previewImage?: string; // Base64 or URL
+  username: string;
+  role: UserRole;
   createdAt: number;
-  updatedAt: number;
 }
 
 export interface PromptModule {
@@ -26,20 +26,24 @@ export interface NAIParams {
   seed?: number;
 }
 
-export interface PromptVersion {
+// Flattened Chain Structure (No more separate versions table)
+export interface PromptChain {
   id: string;
-  chainId: string;
-  version: number;
+  userId: string; // Owner
+  username?: string; // Owner display name
+  name: string;
+  description: string;
+  tags: string[];
+  previewImage?: string; // Base64 or URL
+  
+  // Prompt Data (Formerly in Version)
   basePrompt: string;
   negativePrompt: string;
   modules: PromptModule[];
   params: NAIParams;
-  createdAt: number;
-}
 
-// Composite type for UI
-export interface ChainWithVersion extends PromptChain {
-  latestVersion: PromptVersion | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // Artist Library Types
@@ -52,6 +56,8 @@ export interface Artist {
 // Inspiration Gallery Types
 export interface Inspiration {
   id: string;
+  userId: string; // Owner
+  username?: string;
   title: string;
   imageUrl: string; // Base64 Data URI
   prompt: string;
@@ -62,8 +68,7 @@ export interface Inspiration {
 declare global {
   interface Window {
     ENV?: {
-      NAI_API_KEY?: string;
-      MASTER_KEY?: string;
+      MASTER_KEY?: string; // Legacy, kept for typing compatibility if needed
     };
   }
 }

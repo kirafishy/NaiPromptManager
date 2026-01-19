@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/dbService';
 import { Artist } from '../types';
@@ -217,14 +218,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 🕒
             </button>
             
-            <button 
-                onClick={toggleTheme} 
-                title="夜间模式"
-                className="h-10 px-4 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center transition-colors"
-            >
-                {isDark ? '🌙' : '☀️'}
-            </button>
-
             <button 
                 onClick={() => setShowFavOnly(!showFavOnly)} 
                 title="收藏"

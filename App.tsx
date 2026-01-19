@@ -7,28 +7,36 @@ import { ArtistLibrary } from './components/ArtistLibrary';
 import { ArtistAdmin } from './components/ArtistAdmin';
 import { InspirationGallery } from './components/InspirationGallery';
 import { db } from './services/dbService';
-import { api } from './services/api';
-import { ChainWithVersion, PromptVersion, PromptChain } from './types';
+import { PromptChain, User } from './types';
 
-// Types for navigation state
 type ViewState = 'list' | 'edit' | 'library' | 'inspiration' | 'admin';
 
 const App = () => {
   const [view, setView] = useState<ViewState>('list');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [chains, setChains] = useState<ChainWithVersion[]>([]);
+  const [chains, setChains] = useState<PromptChain[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbConfigError, setDbConfigError] = useState(false);
   
   // Auth State
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
 
   // Theme State
   const [isDark, setIsDark] = useState(() => localStorage.getItem('nai_theme') === 'dark');
 
-  // Fetch data
+  // Check Session on Load
+  useEffect(() => {
+    db.getMe().then(user => {
+        setCurrentUser(user);
+        refreshData();
+    }).catch(() => {
+        setLoading(false);
+    });
+  }, []);
+
   const refreshData = async () => {
     setLoading(true);
     try {
@@ -36,8 +44,6 @@ const App = () => {
       setChains(data);
       setDbConfigError(false);
     } catch (e: any) {
-      console.error("Failed to fetch chains:", e);
-      // Check if it's the specific 503 error we set in the worker
       if (e.message && e.message.includes('Database not configured')) {
           setDbConfigError(true);
       }
@@ -45,23 +51,6 @@ const App = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    // Check if we have a key saved
-    const savedKey = localStorage.getItem('nai_master_key');
-    if (savedKey) {
-      // Validate the key silently on load
-      api.post('/verify-key', { key: savedKey })
-        .then(() => {
-            setIsLoggedIn(true);
-            refreshData();
-        })
-        .catch(() => {
-            localStorage.removeItem('nai_master_key');
-            setIsLoggedIn(false);
-        });
-    }
-  }, []);
 
   useEffect(() => {
     if (isDark) {
@@ -78,20 +67,27 @@ const App = () => {
   const handleNavigate = (newView: ViewState, id?: string) => {
     setSelectedId(id);
     setView(newView);
+    if (newView === 'list' && !loading) {
+       refreshData(); 
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    
     try {
-        await api.post('/verify-key', { key: passwordInput });
-        localStorage.setItem('nai_master_key', passwordInput);
-        setIsLoggedIn(true);
-        refreshData(); // Fetch data after login
-    } catch (err) {
-        setLoginError('密钥错误 (Invalid Master Key)');
+        const res = await db.login(loginUser, loginPass);
+        setCurrentUser(res.user);
+        refreshData();
+    } catch (err: any) {
+        setLoginError(err.message || '登录失败');
     }
+  };
+
+  const handleLogout = async () => {
+      await db.logout();
+      setCurrentUser(null);
+      setLoginUser(''); setLoginPass('');
   };
 
   const handleCreateChain = async (name: string, desc: string) => {
@@ -101,17 +97,17 @@ const App = () => {
     setLoading(false);
   };
 
+  const handleForkChain = async (chain: PromptChain) => {
+      const name = chain.name + ' (Fork)';
+      await db.createChain(name, chain.description, chain);
+      alert('Fork 成功！已保存到您的列表');
+      await refreshData();
+      setView('list');
+  };
+
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
       await db.updateChain(id, updates);
       await refreshData();
-  };
-
-  const handleSaveVersion = async (data: Partial<PromptVersion>) => {
-    if (!selectedId) return;
-    setLoading(true);
-    await db.saveNewVersion(selectedId, data);
-    await refreshData();
-    setLoading(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -124,44 +120,30 @@ const App = () => {
 
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
 
-  // --- Render Login Screen (Global Guard) ---
-  if (!isLoggedIn) {
+  // --- Login Screen ---
+  if (!currentUser) {
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
                 <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg text-2xl font-bold">
-                    N
-                </div>
+                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg text-2xl font-bold">N</div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">NAI Prompt Manager</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">私有部署 · 版本管理 · 军火库</p>
                 </div>
                 
                 <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                    <input 
-                    type="password" 
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    placeholder="请输入 Master Key"
-                    autoFocus
-                    />
+                    <input type="text" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="用户名" autoFocus />
+                </div>
+                <div>
+                    <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="密码" />
                 </div>
                 {loginError && <div className="text-red-500 text-sm text-center font-medium animate-pulse">{loginError}</div>}
-                <button 
-                    type="submit"
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 transition-transform active:scale-[0.98]"
-                >
-                    进入系统
-                </button>
+                <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg">登录</button>
                 </form>
                 
                 <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center text-xs text-gray-400">
-                     <span>v0.2.7 Pro</span>
-                     <button onClick={toggleTheme} className="hover:text-gray-600 dark:hover:text-gray-200">
-                         {isDark ? '切换亮色' : '切换深色'}
-                     </button>
+                     <span>v0.3.0 RBAC</span>
+                     <button onClick={toggleTheme} className="hover:text-gray-600 dark:hover:text-gray-200">{isDark ? '切换亮色' : '切换深色'}</button>
                 </div>
             </div>
         </div>
@@ -171,97 +153,45 @@ const App = () => {
   // --- Database Setup Guide ---
   if (dbConfigError) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-2xl border border-red-200 dark:border-red-900">
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">数据库未连接</h2>
-                        <p className="text-gray-500 dark:text-gray-400">Database Connection Missing</p>
-                    </div>
-                </div>
-                
-                <div className="space-y-4 text-gray-600 dark:text-gray-300 mb-8">
-                    <p>检测到 Cloudflare D1 数据库尚未绑定。请按照以下步骤在 Cloudflare Dashboard 中完成配置：</p>
-                    <ol className="list-decimal pl-5 space-y-2 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                        <li>登录 Cloudflare Dashboard，进入 <strong>Pages</strong>。</li>
-                        <li>点击本项目 (nai-prompt-manager)。</li>
-                        <li>进入 <strong>Settings (设置)</strong> &gt; <strong>Functions (函数)</strong>。</li>
-                        <li>向下滚动找到 <strong>D1 Database Bindings</strong> 部分。</li>
-                        <li>点击 <strong>Add binding</strong>：
-                            <ul className="list-disc pl-5 mt-1 text-sm">
-                                <li><strong>Variable name:</strong> <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">DB</code> (必须完全一致)</li>
-                                <li><strong>D1 database:</strong> 选择你创建的数据库 (e.g. nai-db)</li>
-                            </ul>
-                        </li>
-                        <li>点击 <strong>Save</strong>。</li>
-                        <li className="font-bold text-indigo-600 dark:text-indigo-400">非常重要：回到 Deployments 页面，点击最新的部署，然后点击 "Retry deployment" (重新部署) 以使配置生效！</li>
-                    </ol>
-                </div>
-
-                <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-700 pt-6">
-                    <span className="text-xs text-gray-400">v0.2.7 Pro</span>
-                    <button 
-                        onClick={() => window.location.reload()} 
-                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg transition-transform active:scale-[0.98]"
-                    >
-                        我已重新部署，刷新页面
-                    </button>
-                </div>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
+            <div className="text-center">
+                <h2 className="text-2xl font-bold mb-2">数据库未连接</h2>
+                <p>请在 Cloudflare 后台绑定 D1 数据库到变量 `DB` 并重新部署。</p>
+                <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">刷新</button>
             </div>
         </div>
       );
   }
 
-  // --- Render Main App ---
   const renderContent = () => {
-    if (loading && chains.length === 0 && view === 'list') {
-        return <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-400">
-            <div className="flex flex-col items-center gap-4">
-                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                <p>正在连接云端数据库...</p>
-            </div>
-        </div>;
-    }
-
     switch (view) {
       case 'list':
-        return (
-          <ChainList 
-            chains={chains} 
-            onCreate={handleCreateChain} 
-            onSelect={(id) => handleNavigate('edit', id)}
-            onDelete={handleDelete}
-          />
-        );
+        return <ChainList chains={chains} onCreate={handleCreateChain} onSelect={(id) => handleNavigate('edit', id)} onDelete={handleDelete} />;
       case 'edit':
         const editChain = getSelectedChain();
         if (!editChain) return <div>Chain not found</div>;
-        return (
-          <ChainEditor 
-            chain={editChain} 
-            onSaveVersion={handleSaveVersion}
-            onUpdateChain={handleUpdateChain}
-            onBack={() => handleNavigate('list')} 
-          />
-        );
+        return <ChainEditor chain={editChain} currentUser={currentUser} onUpdateChain={handleUpdateChain} onBack={() => handleNavigate('list')} onFork={handleForkChain} />;
       case 'library':
           return <ArtistLibrary isDark={isDark} toggleTheme={toggleTheme} />;
       case 'inspiration':
-          return <InspirationGallery />;
+          return <InspirationGallery currentUser={currentUser} />;
       case 'admin':
-          return <ArtistAdmin />;
+          return <ArtistAdmin currentUser={currentUser} />;
       default:
         return <div>Unknown View</div>;
     }
   };
 
   return (
-    <Layout onNavigate={handleNavigate} currentView={view}>
-      {renderContent()}
-    </Layout>
+    <div className="flex flex-col h-screen">
+       <Layout onNavigate={handleNavigate} currentView={view} isDark={isDark} toggleTheme={toggleTheme}>
+         <div className="absolute top-2 right-2 z-50 flex items-center gap-2">
+             <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">👤 {currentUser.username} ({currentUser.role})</span>
+             <button onClick={handleLogout} className="text-xs text-red-500 hover:text-red-700 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-1 rounded shadow-sm">退出</button>
+         </div>
+         {renderContent()}
+       </Layout>
+    </div>
   );
 };
 

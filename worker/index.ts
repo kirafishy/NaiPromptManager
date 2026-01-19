@@ -1,5 +1,4 @@
 
-
 // Add missing D1 type definitions locally
 interface D1Result<T = unknown> {
   results: T[];
@@ -23,47 +22,57 @@ interface D1Database {
   exec<T = unknown>(query: string): Promise<D1Result<T>>;
 }
 
-// Pages Advanced Mode 自动注入 ASSETS fetcher
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
-  DB?: D1Database; // DB is optional now until configured
-  NAI_API_KEY: string;
-  MASTER_KEY: string;
+  DB?: D1Database;
+  MASTER_KEY: string; // Legacy env var, kept to avoid deployment errors
 }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Master-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
-const json = (data: any, status = 200) => 
-  new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', ...corsHeaders }, status });
+const json = (data: any, status = 200, headers: Record<string, string> = {}) => 
+  new Response(JSON.stringify(data), { 
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...headers }, 
+    status 
+  });
 
 const error = (msg: string, status = 500) => 
   new Response(JSON.stringify({ error: msg }), { headers: { 'Content-Type': 'application/json', ...corsHeaders }, status });
 
-// SQL Schema for Auto-Initialization
+// Updated Schema with Users and Sessions
 const INIT_SQL = `
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL, -- Simple storage for this demo, usually should be salted hash
+    role TEXT DEFAULT 'user', -- 'admin' or 'user'
+    created_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   CREATE TABLE IF NOT EXISTS chains (
     id TEXT PRIMARY KEY,
+    user_id TEXT, -- Owner
+    username TEXT, -- Cache for display
     name TEXT NOT NULL,
     description TEXT,
     tags TEXT,
     preview_image TEXT,
+    base_prompt TEXT DEFAULT '',
+    negative_prompt TEXT DEFAULT '',
+    modules TEXT DEFAULT '[]',
+    params TEXT DEFAULT '{}',
     created_at INTEGER,
     updated_at INTEGER
-  );
-  CREATE TABLE IF NOT EXISTS versions (
-    id TEXT PRIMARY KEY,
-    chain_id TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    base_prompt TEXT,
-    negative_prompt TEXT,
-    modules TEXT,
-    params TEXT,
-    created_at INTEGER,
-    FOREIGN KEY(chain_id) REFERENCES chains(id) ON DELETE CASCADE
   );
   CREATE TABLE IF NOT EXISTS artists (
     id TEXT PRIMARY KEY,
@@ -72,13 +81,27 @@ const INIT_SQL = `
   );
   CREATE TABLE IF NOT EXISTS inspirations (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
+    username TEXT,
     title TEXT NOT NULL,
     image_url TEXT,
     prompt TEXT,
     created_at INTEGER
   );
-  CREATE INDEX IF NOT EXISTS idx_versions_chain_id ON versions(chain_id);
 `;
+
+// Helper: Parse Cookies
+function parseCookies(request: Request) {
+  const cookieHeader = request.headers.get('Cookie');
+  const cookies: Record<string, string> = {};
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, value] = cookie.split('=').map(c => c.trim());
+      cookies[name] = value;
+    });
+  }
+  return cookies;
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -86,139 +109,209 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
-    // 1. 如果不是 API 请求，直接返回静态资源 (Frontend)
     if (!path.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
     }
 
-    // 2. 处理 API CORS Preflight
     if (method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
-    try {
-      // --- Auth Check (Admin Only Routes) ---
-      if (['PUT', 'DELETE'].includes(method) || (path.startsWith('/api/artists') && method === 'POST') || (path.startsWith('/api/inspirations') && method === 'POST')) {
-         const authHeader = request.headers.get('X-Master-Key');
-         if (authHeader !== env.MASTER_KEY) {
-           return error('Unauthorized', 401);
-         }
+    // DB Guard
+    if (!env.DB) {
+       return error('Database not configured.', 503);
+    }
+    const db = env.DB!;
+
+    // Auto Init DB & Default Admin
+    const initDB = async () => {
+      const statements = INIT_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
+      for (const sql of statements) {
+          await db.prepare(sql).run();
       }
+      // Create Default Admin if not exists
+      try {
+        const admin = await db.prepare('SELECT * FROM users WHERE username = ?').bind('admin').first();
+        if (!admin) {
+            const adminId = crypto.randomUUID();
+            // Default: admin / admin_996
+            await db.prepare('INSERT INTO users (id, username, password, role, created_at) VALUES (?, ?, ?, ?, ?)')
+              .bind(adminId, 'admin', 'admin_996', 'admin', Date.now()).run();
+        }
+      } catch (e) { console.error('Admin init failed', e) }
+    };
+
+    // --- Authentication Middleware ---
+    const getSessionUser = async () => {
+        const cookies = parseCookies(request);
+        const sessionId = cookies['session_id'];
+        if (!sessionId) return null;
+
+        const session = await db.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?')
+            .bind(sessionId, Date.now()).first<{user_id: string}>();
+        
+        if (!session) return null;
+
+        return await db.prepare('SELECT id, username, role FROM users WHERE id = ?')
+            .bind(session.user_id).first<{id: string, username: string, role: string}>();
+    };
+
+    try {
+      // --- Public/Auth Routes ---
       
-      // --- Auth Verification Endpoint ---
-      if (path === '/api/verify-key' && method === 'POST') {
-        const { key } = await request.json() as any;
-        if (key === env.MASTER_KEY) return json({ success: true });
-        return error('Invalid Key', 401);
+      // Init Check (Silent)
+      if (path === '/api/init') {
+          await initDB();
+          return json({ success: true });
       }
 
-      // --- NovelAI Proxy ---
+      // Login
+      if (path === '/api/auth/login' && method === 'POST') {
+          const { username, password } = await request.json() as any;
+          
+          try {
+             // Ensure tables exist on first login attempt
+             await db.prepare('SELECT 1 FROM users').first(); 
+          } catch(e) { await initDB(); }
+
+          const user = await db.prepare('SELECT * FROM users WHERE username = ? AND password = ?')
+              .bind(username, password).first<{id: string, role: string}>();
+
+          if (!user) return error('用户名或密码错误', 401);
+
+          const sessionId = crypto.randomUUID();
+          const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+          await db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
+              .bind(sessionId, user.id, expiresAt).run();
+
+          return json({ success: true, user: { id: user.id, username, role: user.role } }, 200, {
+              'Set-Cookie': `session_id=${sessionId}; Expires=${new Date(expiresAt).toUTCString()}; Path=/; SameSite=Lax; HttpOnly`
+          });
+      }
+
+      // Logout
+      if (path === '/api/auth/logout' && method === 'POST') {
+          const cookies = parseCookies(request);
+          if (cookies['session_id']) {
+              await db.prepare('DELETE FROM sessions WHERE id = ?').bind(cookies['session_id']).run();
+          }
+          return json({ success: true }, 200, {
+              'Set-Cookie': `session_id=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly`
+          });
+      }
+
+      // Check Session
+      if (path === '/api/auth/me' && method === 'GET') {
+          const user = await getSessionUser();
+          if (!user) return error('Unauthorized', 401);
+          return json(user);
+      }
+
+      // --- NAI Proxy (Public wrapper, but we check session) ---
       if (path === '/api/generate' && method === 'POST') {
         const body = await request.json();
+        const clientAuth = request.headers.get('Authorization'); // Key comes from frontend localstorage still
+        if (!clientAuth) return error('Missing API Key', 401);
+
         const naiRes = await fetch("https://image.novelai.net/ai/generate-image", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${env.NAI_API_KEY}`
-          },
+          headers: { "Content-Type": "application/json", "Authorization": clientAuth },
           body: JSON.stringify(body)
         });
 
-        if (!naiRes.ok) {
-           const errText = await naiRes.text();
-           return error(`NAI API API Error: ${errText}`, naiRes.status);
-        }
-        
+        if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
         const blob = await naiRes.blob();
-        return new Response(blob, {
-          headers: { ...corsHeaders, 'Content-Type': 'application/zip' }
-        });
+        return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
       }
 
-      // --- Database Guard ---
-      if ((path.startsWith('/api/chains') || path.startsWith('/api/artists') || path.startsWith('/api/inspirations')) && !env.DB) {
-        return error('Database not configured. Please bind a D1 database named "DB" in Cloudflare Pages settings and REDEPLOY.', 503);
+      // --- Protected Routes Logic ---
+      const currentUser = await getSessionUser();
+      if (!currentUser) return error('Unauthorized', 401);
+
+      // --- User Management ---
+      
+      // Create User (Admin Only)
+      if (path === '/api/users' && method === 'POST') {
+          if (currentUser.role !== 'admin') return error('Forbidden', 403);
+          const { username, password } = await request.json() as any;
+          if (!username || !password) return error('Missing fields', 400);
+          
+          try {
+              const id = crypto.randomUUID();
+              await db.prepare('INSERT INTO users (id, username, password, role, created_at) VALUES (?, ?, ?, ?, ?)')
+                  .bind(id, username, password, 'user', Date.now()).run();
+              return json({ success: true });
+          } catch(e: any) {
+              if (e.message.includes('UNIQUE constraint')) return error('Username exists', 409);
+              throw e;
+          }
       }
 
-      const db = env.DB!;
+      // Change Password (Self)
+      if (path === '/api/users/password' && method === 'PUT') {
+          const { password } = await request.json() as any;
+          if (!password) return error('Missing password', 400);
+          await db.prepare('UPDATE users SET password = ? WHERE id = ?')
+              .bind(password, currentUser.id).run();
+          return json({ success: true });
+      }
+      
+      // Get User List (Admin Only)
+      if (path === '/api/users' && method === 'GET') {
+         if (currentUser.role !== 'admin') return error('Forbidden', 403);
+         const res = await db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at DESC').all();
+         return json(res.results);
+      }
 
-      // Helper: Auto Init DB if table missing
-      // Replaces db.exec() which can be unstable with 'meta.duration' errors in some environments
-      const initDB = async () => {
-        const statements = INIT_SQL.split(';')
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-        for (const sql of statements) {
-            await db.prepare(sql).run();
-        }
-      };
+      // Delete User (Admin Only)
+      if (path.startsWith('/api/users/') && method === 'DELETE') {
+         if (currentUser.role !== 'admin') return error('Forbidden', 403);
+         const id = path.split('/').pop();
+         if (id === currentUser.id) return error('Cannot delete self', 400);
+         await db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+         return json({ success: true });
+      }
 
       // --- Chains ---
       if (path === '/api/chains' && method === 'GET') {
-        let chainsResult;
-        try {
-            chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
-        } catch (e: any) {
-            // Auto-init if table missing
-            if (e.message && (e.message.includes('no such table') || e.message.includes('object not found'))) {
-                await initDB();
-                chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
-            } else {
-                throw e;
-            }
+        // Ensure schema columns exist
+        try { await db.prepare('SELECT user_id FROM chains LIMIT 1').run(); } 
+        catch { 
+           // Migration columns
+           try { await db.prepare("ALTER TABLE chains ADD COLUMN user_id TEXT").run(); } catch {}
+           try { await db.prepare("ALTER TABLE chains ADD COLUMN username TEXT").run(); } catch {}
+           try { await db.prepare("ALTER TABLE inspirations ADD COLUMN user_id TEXT").run(); } catch {}
+           try { await db.prepare("ALTER TABLE inspirations ADD COLUMN username TEXT").run(); } catch {}
         }
-        
-        const chains = chainsResult.results;
 
-        // Fetch Versions (Assuming if chains table exists, versions exists or will be created by INIT_SQL)
-        const versionsResult = await db.prepare(`
-          SELECT v.* FROM versions v
-          INNER JOIN (
-            SELECT chain_id, MAX(version) as max_ver FROM versions GROUP BY chain_id
-          ) grouped ON v.chain_id = grouped.chain_id AND v.version = grouped.max_ver
-        `).all();
-        
-        const versionMap = new Map();
-        versionsResult.results.forEach((v: any) => {
-           v.modules = JSON.parse(v.modules || '[]');
-           v.params = JSON.parse(v.params || '{}');
-           versionMap.set(v.chain_id, v);
-        });
-
-        const data = chains.map((c: any) => ({
+        const chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
+        const data = chainsResult.results.map((c: any) => ({
           ...c,
+          userId: c.user_id, // Map for frontend
           tags: JSON.parse(c.tags || '[]'),
-          latestVersion: versionMap.get(c.id) || null
+          modules: JSON.parse(c.modules || '[]'),
+          params: JSON.parse(c.params || '{}')
         }));
-        
         return json(data);
       }
 
       if (path === '/api/chains' && method === 'POST') {
-        const { name, description } = await request.json() as any;
+        const body = await request.json() as any;
         const id = crypto.randomUUID();
         const now = Date.now();
         
-        try {
-            await db.prepare(
-            'INSERT INTO chains (id, name, description, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-            ).bind(id, name, description, '[]', now, now).run();
-        } catch (e: any) {
-             if (e.message && (e.message.includes('no such table') || e.message.includes('object not found'))) {
-                await initDB();
-                await db.prepare(
-                  'INSERT INTO chains (id, name, description, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-                ).bind(id, name, description, '[]', now, now).run();
-             } else throw e;
-        }
+        // Use provided modules/params or defaults
+        const basePrompt = body.basePrompt || 'masterpiece, best quality, {character}';
+        const negPrompt = body.negativePrompt || 'lowres, bad anatomy';
+        const modules = body.modules ? JSON.stringify(body.modules) : JSON.stringify([{ id: crypto.randomUUID(), name: "光照", content: "cinematic lighting", isActive: true }]);
+        const params = body.params ? JSON.stringify(body.params) : JSON.stringify({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
 
-        const vId = crypto.randomUUID();
-        const defaultModules = JSON.stringify([{ id: crypto.randomUUID(), name: "光照", content: "cinematic lighting", isActive: true }]);
-        const defaultParams = JSON.stringify({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
-        
         await db.prepare(
-          'INSERT INTO versions (id, chain_id, version, base_prompt, negative_prompt, modules, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(vId, id, 1, 'masterpiece, best quality, {character}', 'lowres, bad anatomy', defaultModules, defaultParams, now).run();
+        `INSERT INTO chains 
+        (id, user_id, username, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(id, currentUser.id, currentUser.username, body.name, body.description, '[]', body.previewImage || null, basePrompt, negPrompt, modules, params, now, now).run();
 
         return json({ id });
       }
@@ -227,12 +320,25 @@ export default {
       if (chainIdMatch && method === 'PUT') {
         const id = chainIdMatch[1];
         const updates = await request.json() as any;
+        
+        // Ownership check
+        const chain = await db.prepare('SELECT user_id FROM chains WHERE id = ?').bind(id).first<{user_id: string}>();
+        if (!chain) return error('Not Found', 404);
+        if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') {
+            return error('Permission Denied', 403);
+        }
+
         const fields = [];
         const values = [];
+        
         if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
         if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
         if (updates.previewImage !== undefined) { fields.push('preview_image = ?'); values.push(updates.previewImage); }
-        
+        if (updates.basePrompt !== undefined) { fields.push('base_prompt = ?'); values.push(updates.basePrompt); }
+        if (updates.negativePrompt !== undefined) { fields.push('negative_prompt = ?'); values.push(updates.negativePrompt); }
+        if (updates.modules !== undefined) { fields.push('modules = ?'); values.push(JSON.stringify(updates.modules)); }
+        if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
+
         if (fields.length > 0) {
            fields.push('updated_at = ?');
            values.push(Date.now());
@@ -244,108 +350,98 @@ export default {
 
       if (chainIdMatch && method === 'DELETE') {
         const id = chainIdMatch[1];
-        await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
+        const chain = await db.prepare('SELECT user_id FROM chains WHERE id = ?').bind(id).first<{user_id: string}>();
+        if (chain) {
+            if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') {
+                return error('Permission Denied', 403);
+            }
+            await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
+        }
         return json({ success: true });
       }
 
-      // --- Versions ---
-      if (path.match(/^\/api\/chains\/[^\/]+\/versions$/) && method === 'POST') {
-        const match = path.match(/^\/api\/chains\/([^\/]+)\/versions$/);
-        if (!match) return error('Invalid ID');
-        const chainId = match[1];
-        const body = await request.json() as any;
-
-        const maxVerResult = await db.prepare('SELECT MAX(version) as max_v FROM versions WHERE chain_id = ?').bind(chainId).first<{ max_v: number }>();
-        const nextVer = ((maxVerResult?.max_v) || 0) + 1;
-
-        const newId = crypto.randomUUID();
-        await db.prepare(
-          'INSERT INTO versions (id, chain_id, version, base_prompt, negative_prompt, modules, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(
-          newId, 
-          chainId, 
-          nextVer, 
-          body.basePrompt || '', 
-          body.negativePrompt || '', 
-          JSON.stringify(body.modules || []), 
-          JSON.stringify(body.params || {}), 
-          Date.now()
-        ).run();
-
-        await db.prepare('UPDATE chains SET updated_at = ? WHERE id = ?').bind(Date.now(), chainId).run();
-
-        return json({ id: newId, version: nextVer });
-      }
-
-      // --- Artists ---
+      // --- Artists (Admin Only Write) ---
       if (path === '/api/artists' && method === 'GET') {
-        let results;
-        try {
-             const res = await db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
-             results = res.results;
-        } catch (e: any) {
-            if (e.message && (e.message.includes('no such table'))) {
-                await initDB();
-                results = []; // Empty initially
-            } else throw e;
-        }
-        return json(results);
+         const res = await db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
+         return json(res.results);
       }
       if (path === '/api/artists' && method === 'POST') {
+        if (currentUser.role !== 'admin') return error('Forbidden', 403);
         const body = await request.json() as any;
-        try {
-            await db.prepare('INSERT OR REPLACE INTO artists (id, name, image_url) VALUES (?, ?, ?)').bind(body.id, body.name, body.imageUrl).run();
-        } catch (e: any) {
-            if (e.message && e.message.includes('no such table')) {
-                await initDB();
-                await db.prepare('INSERT OR REPLACE INTO artists (id, name, image_url) VALUES (?, ?, ?)').bind(body.id, body.name, body.imageUrl).run();
-            } else throw e;
-        }
+        await db.prepare('INSERT OR REPLACE INTO artists (id, name, image_url) VALUES (?, ?, ?)').bind(body.id, body.name, body.imageUrl).run();
         return json({ success: true });
       }
-      const artistIdMatch = path.match(/^\/api\/artists\/([^\/]+)$/);
-      if (artistIdMatch && method === 'DELETE') {
-        await db.prepare('DELETE FROM artists WHERE id = ?').bind(artistIdMatch[1]).run();
+      if (path.startsWith('/api/artists/') && method === 'DELETE') {
+        if (currentUser.role !== 'admin') return error('Forbidden', 403);
+        const id = path.split('/').pop();
+        await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
         return json({ success: true });
       }
 
-      // --- Inspirations ---
+      // --- Inspirations (Shared Read, Owner/Admin Write) ---
       if (path === '/api/inspirations' && method === 'GET') {
-        let results;
-        try {
-            const res = await db.prepare('SELECT * FROM inspirations ORDER BY created_at DESC').all();
-            results = res.results;
-        } catch (e: any) {
-             if (e.message && e.message.includes('no such table')) {
-                await initDB();
-                results = [];
-             } else throw e;
-        }
-        return json(results);
+        const res = await db.prepare('SELECT * FROM inspirations ORDER BY created_at DESC').all();
+        return json(res.results.map((i: any) => ({ ...i, userId: i.user_id }))); // Map userId
       }
       if (path === '/api/inspirations' && method === 'POST') {
         const body = await request.json() as any;
-        try {
-             await db.prepare('INSERT OR REPLACE INTO inspirations (id, title, image_url, prompt, created_at) VALUES (?, ?, ?, ?, ?)').bind(body.id, body.title, body.imageUrl, body.prompt, body.createdAt).run();
-        } catch(e: any) {
-             if (e.message && e.message.includes('no such table')) {
-                 await initDB();
-                 await db.prepare('INSERT OR REPLACE INTO inspirations (id, title, image_url, prompt, created_at) VALUES (?, ?, ?, ?, ?)').bind(body.id, body.title, body.imageUrl, body.prompt, body.createdAt).run();
-             } else throw e;
-        }
+        await db.prepare('INSERT OR REPLACE INTO inspirations (id, user_id, username, title, image_url, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(body.id, currentUser.id, currentUser.username, body.title, body.imageUrl, body.prompt, body.createdAt).run();
         return json({ success: true });
-      }
-      const inspIdMatch = path.match(/^\/api\/inspirations\/([^\/]+)$/);
-      if (inspIdMatch && method === 'DELETE') {
-        await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(inspIdMatch[1]).run();
-        return json({ success: true });
-      }
-
-      // Fallback for unknown API routes
-      if (path.startsWith('/api/')) {
-        return error('Not Found', 404);
       }
       
+      // Bulk Delete Inspirations
+      if (path === '/api/inspirations/bulk-delete' && method === 'POST') {
+          const { ids } = await request.json() as { ids: string[] };
+          if (!ids || ids.length === 0) return json({ success: true });
+
+          // Need to verify ownership for each or be admin
+          if (currentUser.role === 'admin') {
+              // Efficient delete for admin
+              // D1 doesn't support array binding in IN nicely yet in all drivers, assume simple loop for safety or JSON string check
+              // Using loop for safety in D1 alpha/beta nuances
+              for (const id of ids) await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
+          } else {
+              // User can only delete their own
+              for (const id of ids) {
+                  await db.prepare('DELETE FROM inspirations WHERE id = ? AND user_id = ?').bind(id, currentUser.id).run();
+              }
+          }
+          return json({ success: true });
+      }
+
+      // Update Inspiration (Title/Prompt)
+      if (path.startsWith('/api/inspirations/') && method === 'PUT') {
+         const id = path.split('/').pop();
+         const updates = await request.json() as any;
+         
+         const item = await db.prepare('SELECT user_id FROM inspirations WHERE id = ?').bind(id).first<{user_id: string}>();
+         if (!item) return error('Not Found', 404);
+         
+         if (item.user_id !== currentUser.id && currentUser.role !== 'admin') {
+             return error('Permission Denied', 403);
+         }
+
+         if (updates.title) await db.prepare('UPDATE inspirations SET title = ? WHERE id = ?').bind(updates.title, id).run();
+         if (updates.prompt) await db.prepare('UPDATE inspirations SET prompt = ? WHERE id = ?').bind(updates.prompt, id).run();
+         
+         return json({ success: true });
+      }
+
+      if (path.startsWith('/api/inspirations/') && method === 'DELETE') {
+         const id = path.split('/').pop();
+         const item = await db.prepare('SELECT user_id FROM inspirations WHERE id = ?').bind(id).first<{user_id: string}>();
+         if (item) {
+             if (item.user_id !== currentUser.id && currentUser.role !== 'admin') {
+                 return error('Permission Denied', 403);
+             }
+             await db.prepare('DELETE FROM inspirations WHERE id = ?').bind(id).run();
+         }
+         return json({ success: true });
+      }
+
+      // Fallback
+      if (path.startsWith('/api/')) return error('Not Found', 404);
       return env.ASSETS.fetch(request);
 
     } catch (e: any) {

@@ -1,26 +1,31 @@
 
-// Base API URL - 在开发模式可能需要指向 http://localhost:8787
+// Base API URL
 const API_BASE = '/api';
 
-const getHeaders = () => {
+const getHeaders = (extraHeaders?: Record<string, string>) => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...extraHeaders
   };
-  
-  // 从本地存储或 Cookie 获取管理密钥
-  // 简单起见，我们还是从 localStorage 读一个 key 用于鉴权
-  const masterKey = localStorage.getItem('nai_master_key');
-  if (masterKey) {
-    headers['X-Master-Key'] = masterKey;
-  }
   return headers;
+};
+
+// Handle response globally
+const handleResponse = async (res: Response) => {
+    if (res.status === 401) {
+        // Optional: Trigger global logout or redirect logic if needed
+        // For now, let component handle the error message
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
 };
 
 export const api = {
   get: async (endpoint: string) => {
-    const res = await fetch(`${API_BASE}${endpoint}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    const res = await fetch(`${API_BASE}${endpoint}`, { 
+        headers: getHeaders() 
+    });
+    return handleResponse(res);
   },
 
   post: async (endpoint: string, data: any) => {
@@ -29,8 +34,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    return handleResponse(res);
   },
 
   put: async (endpoint: string, data: any) => {
@@ -39,24 +43,25 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    return handleResponse(res);
   },
 
-  delete: async (endpoint: string) => {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
+  delete: async (endpoint: string, data?: any) => {
+    const options: RequestInit = {
       method: 'DELETE',
       headers: getHeaders(),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    };
+    if (data) options.body = JSON.stringify(data);
+    
+    const res = await fetch(`${API_BASE}${endpoint}`, options);
+    return handleResponse(res);
   },
   
-  // 专门用于二进制响应的请求 (NovelAI 图片)
-  postBinary: async (endpoint: string, data: any) => {
+  // Binary response for images
+  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>) => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(headers),
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await res.text());
