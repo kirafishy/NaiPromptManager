@@ -4,7 +4,7 @@ import { User } from '../types';
 
 interface LayoutProps {
   children: ReactNode;
-  onNavigate: (view: 'list' | 'edit' | 'library' | 'inspiration' | 'admin', id?: string) => void;
+  onNavigate: (view: 'list' | 'edit' | 'library' | 'inspiration' | 'admin' | 'history', id?: string) => void;
   currentView: string;
   isDark: boolean;
   toggleTheme: () => void;
@@ -35,6 +35,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             <span className="hidden md:block ml-3">我的 Prompt 链</span>
+          </button>
+          
+          <button
+            onClick={() => onNavigate('history')}
+            className={`w-full flex items-center p-3 rounded-lg transition-colors ${
+              currentView === 'history' 
+              ? 'bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 font-bold' 
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span className="hidden md:block ml-3">生图历史</span>
           </button>
           
           <button
@@ -99,7 +111,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
             </div>
           )}
 
-          <div className="text-xs text-gray-500 dark:text-gray-600 text-center md:text-left">v0.3.1 Pro</div>
+          <div className="text-xs text-gray-500 dark:text-gray-600 text-center md:text-left">v0.3.2 History</div>
         </div>
       </aside>
 

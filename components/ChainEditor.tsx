@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { PromptChain, PromptModule, User } from '../types';
 import { extractVariables, compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
-import { db } from '../services/dbService';
+import { localHistory } from '../services/localHistory';
 
 interface ChainEditorProps {
   chain: PromptChain;
@@ -52,8 +52,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
+  
   // --- Initialization ---
   useEffect(() => {
     setBasePrompt(chain.basePrompt || '');
@@ -190,6 +189,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     try {
         const img = await generateImage(apiKey, finalPrompt, negativePrompt, params);
         setGeneratedImage(img);
+        
+        // Auto-save to Local History
+        await localHistory.add(img, finalPrompt, params);
+        
     } catch (e: any) {
         setErrorMsg(e.message);
     } finally {
@@ -200,8 +203,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const handleSavePreview = async () => {
     if (!generatedImage || !isOwner) return;
     if(confirm('将当前生成的图片设为该 Chain 的封面图？')) {
-        onUpdateChain(chain.id, { previewImage: generatedImage });
-        alert('封面已更新');
+        try {
+            await onUpdateChain(chain.id, { previewImage: generatedImage });
+            alert('封面已更新 (刷新列表查看效果)');
+        } catch(e: any) {
+            alert('设置封面失败: ' + e.message);
+        }
     }
   };
 
@@ -416,7 +423,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                         isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
                     }`}
                     >
-                    {isGenerating ? '生成中...' : '生成预览'}
+                    {isGenerating ? '生成中...' : '生成预览 (自动保存历史)'}
                   </button>
                   {errorMsg && <div className="text-red-500 text-xs mb-2 text-center">{errorMsg}</div>}
                   

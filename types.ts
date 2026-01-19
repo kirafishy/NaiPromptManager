@@ -64,6 +64,15 @@ export interface Inspiration {
   createdAt: number;
 }
 
+// Local Generation History Item
+export interface LocalGenItem {
+    id: string;
+    imageUrl: string; // Base64
+    prompt: string;
+    params: NAIParams;
+    createdAt: number;
+}
+
 // Global Env Type for Cloudflare/Runtime injection
 declare global {
   interface Window {

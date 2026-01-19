@@ -6,10 +6,11 @@ import { ChainEditor } from './components/ChainEditor';
 import { ArtistLibrary } from './components/ArtistLibrary';
 import { ArtistAdmin } from './components/ArtistAdmin';
 import { InspirationGallery } from './components/InspirationGallery';
+import { GenHistory } from './components/GenHistory';
 import { db } from './services/dbService';
 import { PromptChain, User } from './types';
 
-type ViewState = 'list' | 'edit' | 'library' | 'inspiration' | 'admin';
+type ViewState = 'list' | 'edit' | 'library' | 'inspiration' | 'admin' | 'history';
 
 const App = () => {
   const [view, setView] = useState<ViewState>('list');
@@ -153,7 +154,7 @@ const App = () => {
                 </form>
                 
                 <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center text-xs text-gray-400">
-                     <span>v0.3.1 RBAC</span>
+                     <span>v0.3.2 History</span>
                      <button onClick={toggleTheme} className="hover:text-gray-600 dark:hover:text-gray-200">{isDark ? '切换亮色' : '切换深色'}</button>
                 </div>
             </div>
@@ -195,6 +196,8 @@ const App = () => {
           return <InspirationGallery currentUser={currentUser} />;
       case 'admin':
           return <ArtistAdmin currentUser={currentUser} />;
+      case 'history':
+          return <GenHistory currentUser={currentUser} />;
       default:
         return <div>Unknown View</div>;
     }
