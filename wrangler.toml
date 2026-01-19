@@ -1,0 +1,16 @@
+
+name = "nai-prompt-manager"
+compatibility_date = "2024-04-01"
+pages_build_output_dir = "dist"
+
+# 配置 D1 数据库
+[[d1_databases]]
+binding = "DB" # Worker 中使用的变量名
+database_name = "nai-db"
+database_id = "YOUR_D1_DATABASE_ID_HERE" # 请在部署时替换为实际 ID
+
+[vars]
+# NAI API Key (现在在 Worker 端使用，前端不可见)
+NAI_API_KEY = ""
+# 后台管理访问密钥
+MASTER_KEY = "admin888"
