@@ -8,7 +8,7 @@ import { ArtistAdmin } from './components/ArtistAdmin';
 import { InspirationGallery } from './components/InspirationGallery';
 import { GenHistory } from './components/GenHistory';
 import { db } from './services/dbService';
-import { PromptChain, User } from './types';
+import { PromptChain, User, Artist, Inspiration } from './types';
 
 type ViewState = 'list' | 'edit' | 'library' | 'inspiration' | 'admin' | 'history';
 
@@ -19,6 +19,10 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [dbConfigError, setDbConfigError] = useState(false);
   
+  // Data Cache State
+  const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
+  const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
+
   // Dirty State for Navigation Guard
   const [isEditorDirty, setIsEditorDirty] = useState(false);
   
@@ -54,6 +58,16 @@ const App = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadArtists = async () => {
+      const data = await db.getAllArtists();
+      setArtistsCache(data.sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const loadInspirations = async () => {
+      const data = await db.getAllInspirations();
+      setInspirationsCache(data);
   };
 
   useEffect(() => {
@@ -139,7 +153,7 @@ const App = () => {
             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
                 <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg text-2xl font-bold">N</div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">NAI Prompt Manager</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">NAI 咒语构建终端</h2>
                 </div>
                 
                 <form onSubmit={handleLogin} className="space-y-4">
@@ -154,7 +168,7 @@ const App = () => {
                 </form>
                 
                 <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center text-xs text-gray-400">
-                     <span>v0.3.2 History</span>
+                     <span>v0.4.0 Cache</span>
                      <button onClick={toggleTheme} className="hover:text-gray-600 dark:hover:text-gray-200">{isDark ? '切换亮色' : '切换深色'}</button>
                 </div>
             </div>
@@ -191,9 +205,18 @@ const App = () => {
                 setIsDirty={setIsEditorDirty}
                />;
       case 'library':
-          return <ArtistLibrary isDark={isDark} toggleTheme={toggleTheme} />;
+          return <ArtistLibrary 
+                    isDark={isDark} 
+                    toggleTheme={toggleTheme} 
+                    artistsData={artistsCache} 
+                    onRefresh={loadArtists} 
+                 />;
       case 'inspiration':
-          return <InspirationGallery currentUser={currentUser} />;
+          return <InspirationGallery 
+                    currentUser={currentUser} 
+                    inspirationsData={inspirationsCache} 
+                    onRefresh={loadInspirations} 
+                 />;
       case 'admin':
           return <ArtistAdmin currentUser={currentUser} />;
       case 'history':

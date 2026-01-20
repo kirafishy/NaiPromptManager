@@ -1,6 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
-import { db } from '../services/dbService';
+import React, { useState, useEffect, useRef } from 'react';
 import { Artist } from '../types';
 
 interface CartItem {
@@ -11,6 +10,9 @@ interface CartItem {
 interface ArtistLibraryProps {
   isDark: boolean;
   toggleTheme: () => void;
+  // New props for caching
+  artistsData: Artist[] | null;
+  onRefresh: () => Promise<void>;
 }
 
 // Helper to get first char
@@ -21,14 +23,52 @@ const getGroupChar = (name: string) => {
 
 const ALPHABET = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme }) => {
-  const [artists, setArtists] = useState<Artist[]>([]);
+// Lazy Loading Component
+const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [isInView, setIsInView] = useState(false);
+    const imgRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                setIsInView(true);
+                observer.disconnect();
+            }
+        }, { threshold: 0.1 });
+
+        if (imgRef.current) observer.observe(imgRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={imgRef} className="w-full h-full relative bg-gray-200 dark:bg-gray-900 overflow-hidden">
+            {isInView && (
+                <img 
+                    src={src} 
+                    alt={alt} 
+                    className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
+                    onLoad={() => setIsLoaded(true)}
+                />
+            )}
+            {!isLoaded && isInView && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                    <span className="animate-pulse">Loading...</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme, artistsData, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showFavOnly, setShowFavOnly] = useState(false);
   const [usePrefix, setUsePrefix] = useState(true);
   const [lightboxImg, setLightboxImg] = useState<{src: string, name: string} | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // New State for features
   const [history, setHistory] = useState<{text: string, time: string}[]>([]);
@@ -37,13 +77,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   const [importText, setImportText] = useState('');
   const [gachaCount, setGachaCount] = useState(3);
 
-  // Load data
+  // Load data via Props (Caching)
   useEffect(() => {
-    const loadData = async () => {
-      const data = await db.getAllArtists();
-      setArtists(data.sort((a, b) => a.name.localeCompare(b.name)));
+    const initData = async () => {
+        if (!artistsData) {
+            setIsLoading(true);
+            await onRefresh();
+            setIsLoading(false);
+        }
     };
-    loadData();
+    initData();
 
     const savedFav = localStorage.getItem('nai_fav_artists');
     if (savedFav) setFavorites(new Set(JSON.parse(savedFav)));
@@ -103,7 +146,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     alert('组合串已复制！');
   };
 
-  const filteredArtists = artists.filter(a => {
+  const filteredArtists = (artistsData || []).filter(a => {
     if (showFavOnly && !favorites.has(a.name)) return false;
     if (searchTerm) return a.name.toLowerCase().includes(searchTerm.toLowerCase());
     return true;
@@ -112,7 +155,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   // --- New Features Logic ---
   
   const gacha = () => {
-    const pool = showFavOnly ? artists.filter(a => favorites.has(a.name)) : artists;
+    if (!artistsData) return;
+    const pool = showFavOnly ? artistsData.filter(a => favorites.has(a.name)) : artistsData;
     if (pool.length === 0) return;
     
     // Pick random count
@@ -126,7 +170,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         }
     }
     setCart(newCart);
-    // Removed alert as requested
   };
 
   const handleImport = () => {
@@ -152,7 +195,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
           }
           
           // Match with known artists
-          const matched = artists.find(a => a.name.toLowerCase() === name.toLowerCase());
+          const matched = (artistsData || []).find(a => a.name.toLowerCase() === name.toLowerCase());
           if (matched) {
               // Avoid duplicates in batch
               if (!newItems.find(i => i.name === matched.name)) {
@@ -175,9 +218,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   };
 
   const scrollToLetter = (char: string) => {
+    // Scroll within the container instead of window to avoid hiding toolbar
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
     const el = document.getElementById(`anchor-${char}`);
     if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Calculate offset relative to container
+        const topPos = el.offsetTop - container.offsetTop;
+        container.scrollTo({ top: topPos, behavior: 'smooth' });
     }
   };
 
@@ -185,7 +234,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       
       {/* --- Controls Header (Replicated Structure) --- */}
-      <div className="p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col md:flex-row gap-4 items-center justify-center flex-wrap z-10 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col md:flex-row gap-4 items-center justify-center flex-wrap z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         
         {/* Search */}
         <div className="flex-1 min-w-[300px] relative">
@@ -259,8 +308,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
       </div>
 
-      {/* --- A-Z Navigation Sidebar --- */}
-      <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden md:flex flex-col gap-0.5 bg-white/80 dark:bg-gray-800/80 backdrop-blur rounded-l-lg p-1 shadow-lg border border-r-0 border-gray-200 dark:border-gray-700 max-h-[80%] overflow-y-auto no-scrollbar">
+      {/* --- A-Z Navigation Sidebar (Moved to LEFT) --- */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 z-20 hidden md:flex flex-col gap-0.5 bg-white/80 dark:bg-gray-800/80 backdrop-blur rounded-r-lg p-1 shadow-lg border border-l-0 border-gray-200 dark:border-gray-700 max-h-[80%] overflow-y-auto no-scrollbar">
           {ALPHABET.map(char => (
               <button 
                 key={char} 
@@ -273,7 +322,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
       </div>
 
       {/* --- Grid Content --- */}
-      <div className="flex-1 overflow-y-auto p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 pl-10 md:pl-14 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
+         {isLoading && (
+             <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80 z-20">
+                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+             </div>
+         )}
+         
          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pr-6"> 
              {filteredArtists.map((artist, idx) => {
                  const isSelected = !!cart.find(c => c.name === artist.name);
@@ -291,19 +346,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         className={`group relative bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
                         onClick={() => toggleCart(artist.name)}
                      >
-                         <div className="aspect-square bg-gray-200 dark:bg-gray-900 relative overflow-hidden">
-                             <img src={artist.imageUrl} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
-                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                         <div className="aspect-square relative overflow-hidden">
+                             {/* Use Custom Lazy Image */}
+                             <LazyImage src={artist.imageUrl} alt={artist.name} />
+                             
+                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
                              
                              {/* Actions Overlay */}
                              <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                                  <button onClick={(e) => toggleFav(artist.name, e)} className={`p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm ${isFav ? 'text-yellow-500' : 'text-gray-600 dark:text-white'}`}>
                                      <svg className="w-4 h-4" fill={isFav ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                                  </button>
-                                 <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-blue-500 dark:text-blue-300 hover:text-blue-600">
+                                 <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-blue-500 dark:text-blue-300 hover:text-blue-600 pointer-events-auto">
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                  </a>
-                                 <button onClick={(e) => {e.stopPropagation(); setLightboxImg({src: artist.imageUrl, name: artist.name})}} className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-gray-700 dark:text-white">
+                                 <button onClick={(e) => {e.stopPropagation(); setLightboxImg({src: artist.imageUrl, name: artist.name})}} className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-gray-700 dark:text-white pointer-events-auto">
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                                  </button>
                              </div>

@@ -1,20 +1,60 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/dbService';
 import { Inspiration, User } from '../types';
 import { extractMetadata } from '../services/metadataService';
 
 interface InspirationGalleryProps {
     currentUser: User;
+    // New props for caching
+    inspirationsData: Inspiration[] | null;
+    onRefresh: () => Promise<void>;
 }
 
-export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser }) => {
-  const [inspirations, setInspirations] = useState<Inspiration[]>([]);
+// Lazy Loading Component (Reused logic, kept separate per component for modularity if needed)
+const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [isInView, setIsInView] = useState(false);
+    const imgRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                setIsInView(true);
+                observer.disconnect();
+            }
+        }, { threshold: 0.1 });
+
+        if (imgRef.current) observer.observe(imgRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={imgRef} className="w-full h-full relative bg-gray-200 dark:bg-gray-900 overflow-hidden">
+            {isInView && (
+                <img 
+                    src={src} 
+                    alt={alt} 
+                    className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
+                    onLoad={() => setIsLoaded(true)}
+                />
+            )}
+            {!isLoaded && isInView && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                    <span className="animate-pulse">Loading...</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [lightboxImg, setLightboxImg] = useState<{item: Inspiration, isEditing: boolean} | null>(null);
   const [uploadMode, setUploadMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Upload State
   const [upTitle, setUpTitle] = useState('');
@@ -22,13 +62,15 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [upPrompt, setUpPrompt] = useState('');
 
   useEffect(() => {
-    refreshData();
+    const initData = async () => {
+        if (!inspirationsData) {
+            setIsLoading(true);
+            await onRefresh();
+            setIsLoading(false);
+        }
+    };
+    initData();
   }, []);
-
-  const refreshData = async () => {
-    const data = await db.getAllInspirations();
-    setInspirations(data);
-  };
 
   const copyPrompt = (prompt: string, e?: React.MouseEvent) => {
     if(e) e.stopPropagation();
@@ -63,7 +105,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       });
       setUploadMode(false);
       setUpTitle(''); setUpImg(''); setUpPrompt('');
-      refreshData();
+      onRefresh();
   };
 
   const handleSaveEdit = async () => {
@@ -73,7 +115,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           prompt: lightboxImg.item.prompt
       });
       setLightboxImg(null);
-      refreshData();
+      onRefresh();
   };
 
   const toggleSelection = (id: string) => {
@@ -89,12 +131,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       await db.bulkDeleteInspirations(Array.from(selectedIds));
       setSelectedIds(new Set());
       setSelectionMode(false);
-      refreshData();
+      onRefresh();
   };
 
   const canEdit = (item: Inspiration) => item.userId === currentUser.id || currentUser.role === 'admin';
 
-  const filtered = inspirations.filter(i => 
+  const filtered = (inspirationsData || []).filter(i => 
     i.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
     i.prompt.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -102,7 +144,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       {/* Header */}
-      <header className="p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col md:flex-row gap-4 items-center justify-between border-b border-gray-200 dark:border-gray-700 z-10">
+      <header className="p-6 bg-white dark:bg-gray-800 shadow-md flex flex-col md:flex-row gap-4 items-center justify-between border-b border-gray-200 dark:border-gray-700 z-10 flex-shrink-0">
           <div>
              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">灵感图库</h1>
              <p className="text-xs text-gray-500 dark:text-gray-400">收藏优秀的生成结果与 Prompt</p>
@@ -135,7 +177,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       </header>
 
       {/* Grid */}
-      <div className="flex-1 overflow-y-auto p-6 pb-20">
+      <div className="flex-1 overflow-y-auto p-6 pb-20 relative">
+             {isLoading && (
+                 <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80 z-20">
+                     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+                 </div>
+             )}
+
              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                  {filtered.map(item => (
                      <div 
@@ -144,10 +192,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
                         onClick={() => selectionMode ? toggleSelection(item.id) : null}
                      >
                          <div 
-                            className="aspect-[2/3] md:aspect-square bg-gray-200 dark:bg-gray-900 relative overflow-hidden cursor-zoom-in"
+                            className="aspect-[2/3] md:aspect-square relative overflow-hidden cursor-zoom-in"
                             onClick={() => !selectionMode && setLightboxImg({item, isEditing: false})}
                          >
-                             <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                             {/* Lazy Image */}
+                             <LazyImage src={item.imageUrl} alt={item.title} />
+
                              {selectionMode && (
                                  <div className={`absolute inset-0 flex items-center justify-center bg-black/40`}>
                                      {selectedIds.has(item.id) && <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
