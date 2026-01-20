@@ -453,7 +453,8 @@ export default {
         // Updated Default module with position: 'post'
         const modules = body.modules ? JSON.stringify(body.modules) : JSON.stringify([{ id: crypto.randomUUID(), name: "光照", content: "cinematic lighting", isActive: true, position: 'post' }]);
         const params = body.params ? JSON.stringify(body.params) : JSON.stringify({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
-        const vars = body.variableValues ? JSON.stringify(body.variableValues) : '{}';
+        // UPDATE: Default variable_values to include subject: '1girl'
+        const vars = body.variableValues ? JSON.stringify(body.variableValues) : JSON.stringify({ subject: '1girl' });
 
         await db.prepare(
         `INSERT INTO chains 

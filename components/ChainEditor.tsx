@@ -76,7 +76,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     
     // Initialize Subject Prompt from persisted variableValues or empty
     const savedVars = chain.variableValues || {};
-    setSubjectPrompt(savedVars['subject'] || '');
+    // If saving vars is empty (legacy chains or new backend logic didn't catch), default to 1girl
+    setSubjectPrompt(savedVars['subject'] || '1girl');
     
     // Initialize module active state from saved state
     const initialModules: Record<string, boolean> = {};
