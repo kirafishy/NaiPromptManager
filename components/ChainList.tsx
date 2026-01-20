@@ -7,9 +7,11 @@ interface ChainListProps {
   onCreate: (name: string, desc: string) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onRefresh: () => void;
+  isLoading: boolean;
 }
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, onCreate, onSelect, onDelete }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, onCreate, onSelect, onDelete, onRefresh, isLoading }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -21,6 +23,28 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, onCreate, onSelect
     setIsModalOpen(false);
     setNewName('');
     setNewDesc('');
+  };
+
+  const copyFullPrompt = (chain: PromptChain, negative = false) => {
+      if (negative) {
+          navigator.clipboard.writeText(chain.negativePrompt);
+          alert('负面提示词已复制');
+          return;
+      }
+
+      // Concatenate Base + Active Modules
+      let parts = [];
+      if (chain.basePrompt) parts.push(chain.basePrompt);
+      if (chain.modules) {
+          chain.modules.forEach(m => {
+              if (m.isActive) parts.push(m.content);
+          });
+      }
+      
+      // Cleanup text
+      const full = parts.join(', ').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '');
+      navigator.clipboard.writeText(full);
+      alert('完整正面提示词已复制');
   };
 
   const filteredChains = chains.filter(c => 
@@ -37,6 +61,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, onCreate, onSelect
             <p className="text-gray-500 dark:text-gray-400">管理并迭代你的 NovelAI 提示词风格组合。</p>
           </div>
           <div className="flex gap-4">
+             <button 
+                onClick={onRefresh} 
+                className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${isLoading ? 'animate-spin' : ''}`}
+                title="刷新列表"
+             >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+             </button>
              <input 
                 type="text" 
                 placeholder="搜索..." 
@@ -62,7 +93,25 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, onCreate, onSelect
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredChains.map((chain) => (
-              <div key={chain.id} onClick={() => onSelect(chain.id)} className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer">
+              <div key={chain.id} onClick={() => onSelect(chain.id)} className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
+                {/* Copy Buttons Overlay */}
+                <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); copyFullPrompt(chain, false); }} 
+                        className="bg-white/90 dark:bg-black/70 backdrop-blur p-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+                        title="复制完整正面词"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                    </button>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); copyFullPrompt(chain, true); }} 
+                        className="bg-white/90 dark:bg-black/70 backdrop-blur p-1.5 rounded-full shadow-sm text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200"
+                        title="复制负面词"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                    </button>
+                </div>
+
                 {/* Preview Image */}
                 <div className="aspect-[3/4] bg-gray-100 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden">
                     {chain.previewImage ? (

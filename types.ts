@@ -42,6 +42,9 @@ export interface PromptChain {
   negativePrompt: string;
   modules: PromptModule[];
   params: NAIParams;
+  
+  // New: Persist variable inputs
+  variableValues?: Record<string, string>;
 
   createdAt: number;
   updatedAt: number;

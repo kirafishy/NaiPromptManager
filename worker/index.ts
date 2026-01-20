@@ -87,6 +87,7 @@ const INIT_SQL = `
     negative_prompt TEXT DEFAULT '',
     modules TEXT DEFAULT '[]',
     params TEXT DEFAULT '{}',
+    variable_values TEXT DEFAULT '{}',
     created_at INTEGER,
     updated_at INTEGER
   );
@@ -236,6 +237,9 @@ export default {
       try { await db.prepare("ALTER TABLE chains ADD COLUMN username TEXT").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE inspirations ADD COLUMN user_id TEXT").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE inspirations ADD COLUMN username TEXT").run(); } catch (e) {}
+      
+      // Migration for variable_values
+      try { await db.prepare("ALTER TABLE chains ADD COLUMN variable_values TEXT DEFAULT '{}'").run(); } catch (e) {}
 
       // Create Default Admin if not exists
       try {
@@ -396,6 +400,7 @@ export default {
           id: c.id, userId: c.user_id, username: c.username, name: c.name, description: c.description,
           tags: JSON.parse(c.tags || '[]'), previewImage: c.preview_image, basePrompt: c.base_prompt,
           negativePrompt: c.negative_prompt, modules: JSON.parse(c.modules || '[]'), params: JSON.parse(c.params || '{}'),
+          variableValues: JSON.parse(c.variable_values || '{}'),
           createdAt: c.created_at, updatedAt: c.updated_at
         }));
         return json(data);
@@ -409,12 +414,13 @@ export default {
         const negPrompt = body.negativePrompt || 'lowres, bad anatomy';
         const modules = body.modules ? JSON.stringify(body.modules) : JSON.stringify([{ id: crypto.randomUUID(), name: "光照", content: "cinematic lighting", isActive: true }]);
         const params = body.params ? JSON.stringify(body.params) : JSON.stringify({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
+        const vars = body.variableValues ? JSON.stringify(body.variableValues) : '{}';
 
         await db.prepare(
         `INSERT INTO chains 
-        (id, user_id, username, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, created_at, updated_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(id, currentUser.id, currentUser.username, body.name, body.description, '[]', null, basePrompt, negPrompt, modules, params, now, now).run();
+        (id, user_id, username, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(id, currentUser.id, currentUser.username, body.name, body.description, '[]', null, basePrompt, negPrompt, modules, params, vars, now, now).run();
 
         return json({ id });
       }
@@ -463,6 +469,7 @@ export default {
         if (updates.negativePrompt !== undefined) { fields.push('negative_prompt = ?'); values.push(updates.negativePrompt); }
         if (updates.modules !== undefined) { fields.push('modules = ?'); values.push(JSON.stringify(updates.modules)); }
         if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
+        if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
 
         if (fields.length > 0) {
            fields.push('updated_at = ?');
@@ -490,7 +497,12 @@ export default {
       // --- Artists ---
       if (path === '/api/artists' && method === 'GET') {
          const res = await db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
-         return json(res.results);
+         // Fix: Map image_url to imageUrl to match frontend types
+         return json(res.results.map((a: any) => ({
+             id: a.id,
+             name: a.name,
+             imageUrl: a.image_url
+         })));
       }
       if (path === '/api/artists' && method === 'POST') {
         if (currentUser.role !== 'admin') return error('Forbidden', 403);

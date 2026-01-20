@@ -43,7 +43,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   }, [hasChanges, setIsDirty]);
 
   // --- Testing State ---
-  const [variables, setVariables] = useState<Record<string, string>>({});
+  const [variables, setVariables] = useState<Record<string, string>>(chain.variableValues || {});
   const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
   const [finalPrompt, setFinalPrompt] = useState('');
   
@@ -62,7 +62,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     setParams(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
     setChainName(chain.name);
     setChainDesc(chain.description);
+    // Initialize variable values from saved state
+    setVariables(chain.variableValues || {});
     
+    // Initialize module active state from saved state
     const initialModules: Record<string, boolean> = {};
     if (chain.modules) {
       chain.modules.forEach(m => {
@@ -122,6 +125,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
       isActive: true
     };
     setModules([...modules, newModule]);
+    setActiveModules(prev => ({ ...prev, [newModule.id]: true }));
     setHasChanges(true);
   };
 
@@ -154,30 +158,48 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
 
   const handleSaveAll = () => {
       if (!isOwner) return;
+      
+      // Update module persistence based on current toggle state
+      const updatedModules = modules.map(m => ({
+          ...m,
+          isActive: activeModules[m.id] ?? true
+      }));
+
       onUpdateChain(chain.id, {
           name: chainName,
           description: chainDesc,
           basePrompt,
           negativePrompt,
-          modules,
-          params
+          modules: updatedModules,
+          params,
+          variableValues: variables // Persist variable values
       });
       setHasChanges(false);
       setIsEditingInfo(false);
   };
 
   const handleFork = () => {
+      const updatedModules = modules.map(m => ({
+          ...m,
+          isActive: activeModules[m.id] ?? true
+      }));
+
       onFork({
           ...chain,
           basePrompt,
           negativePrompt,
-          modules,
-          params
+          modules: updatedModules,
+          params,
+          variableValues: variables
       });
   };
 
   const toggleModuleActive = (id: string) => {
-    setActiveModules(prev => ({ ...prev, [id]: !prev[id] }));
+    setActiveModules(prev => {
+        const newState = { ...prev, [id]: !prev[id] };
+        if (isOwner) setHasChanges(true); // Toggle should mark as dirty for saving
+        return newState;
+    });
   };
 
   const handleGenerate = async () => {
@@ -236,6 +258,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
       }
   };
 
+  const copyPromptToClipboard = (isNegative: boolean) => {
+      if (isNegative) {
+          navigator.clipboard.writeText(negativePrompt);
+          alert('负面提示词已复制');
+      } else {
+          // Use current finalPrompt which is already compiled with modules and variables
+          navigator.clipboard.writeText(finalPrompt);
+          alert('完整正面提示词已复制');
+      }
+  };
+
+  const handleVariableChange = (key: string, value: string) => {
+      setVariables(prev => ({ ...prev, [key]: value }));
+      if (isOwner) setHasChanges(true); // Mark dirty on variable change
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* Top Bar */}
@@ -261,6 +299,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
         </div>
         
         <div className="flex items-center gap-4">
+             {/* Copy Buttons */}
+             <div className="flex gap-2 mr-2">
+                <button 
+                    onClick={() => copyPromptToClipboard(false)} 
+                    className="p-1.5 rounded text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                    title="复制完整正面 Prompt"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                </button>
+                <button 
+                    onClick={() => copyPromptToClipboard(true)} 
+                    className="p-1.5 rounded text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                    title="复制负面 Prompt"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                </button>
+            </div>
+
             <div className="relative group">
                 <input 
                     type="password" 
@@ -271,7 +327,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                 />
             </div>
             
-            {/* Save button removed from here */}
             {!isOwner && (
                 <button
                     onClick={handleFork}
@@ -432,7 +487,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                       type="text"
                                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm outline-none focus:border-indigo-500"
                                       value={variables[v] || ''}
-                                      onChange={(e) => setVariables(prev => ({ ...prev, [v]: e.target.value }))}
+                                      onChange={(e) => handleVariableChange(v, e.target.value)}
                                   />
                               </div>
                           ))}

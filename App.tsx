@@ -93,7 +93,8 @@ const App = () => {
 
     setSelectedId(id);
     setView(newView);
-    if (newView === 'list' && !loading) {
+    // Only refresh if we have no data (Cache strategy)
+    if (newView === 'list' && chains.length === 0 && !loading) {
        refreshData(); 
     }
   };
@@ -192,7 +193,14 @@ const App = () => {
   const renderContent = () => {
     switch (view) {
       case 'list':
-        return <ChainList chains={chains} onCreate={handleCreateChain} onSelect={(id) => handleNavigate('edit', id)} onDelete={handleDelete} />;
+        return <ChainList 
+                    chains={chains} 
+                    onCreate={handleCreateChain} 
+                    onSelect={(id) => handleNavigate('edit', id)} 
+                    onDelete={handleDelete}
+                    onRefresh={refreshData}
+                    isLoading={loading}
+               />;
       case 'edit':
         const editChain = getSelectedChain();
         if (!editChain) return <div>Chain not found</div>;
