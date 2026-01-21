@@ -322,6 +322,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 flex-1 max-w-2xl">
                   <input type="text" value={chainName} onChange={e => {setChainName(e.target.value); setHasChanges(true)}} className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold" />
                   <input type="text" value={chainDesc} onChange={e => {setChainDesc(e.target.value); setHasChanges(true)}} className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm flex-1 focus:border-indigo-500 outline-none" />
+                  <button 
+                    onClick={() => setIsEditingInfo(false)} 
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium flex-shrink-0"
+                  >
+                    确定
+                  </button>
               </div>
           ) : (
              <div className="flex items-center gap-2 group cursor-pointer overflow-hidden" onClick={() => isOwner && setIsEditingInfo(true)}>
@@ -373,9 +379,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
       </header>
 
       {/* Editor Content */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
           {/* Left Panel - Editor */}
-          <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 flex-1">
+          <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
               <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-24">
                   {!isOwner && (
                       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
@@ -527,7 +533,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
           </div>
 
           {/* Right Panel - Preview (Testing) - Order 1 on mobile (top) */}
-          <div className="w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800">
+          <div className="w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
               <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-[400px]">
                   {/* Subject / Variable Input */}
                   <div className="mb-4 bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-800">

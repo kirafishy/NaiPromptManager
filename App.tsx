@@ -12,6 +12,8 @@ import { PromptChain, User, Artist, Inspiration } from './types';
 
 type ViewState = 'list' | 'edit' | 'library' | 'inspiration' | 'admin' | 'history';
 
+const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
+
 const App = () => {
   const [view, setView] = useState<ViewState>('list');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
@@ -22,6 +24,13 @@ const App = () => {
   // Data Cache State
   const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
+  const [usersCache, setUsersCache] = useState<User[] | null>(null);
+
+  // Cache Timestamps
+  const [lastChainFetch, setLastChainFetch] = useState(0);
+  const [lastArtistFetch, setLastArtistFetch] = useState(0);
+  const [lastInspirationFetch, setLastInspirationFetch] = useState(0);
+  const [lastUserFetch, setLastUserFetch] = useState(0);
 
   // Dirty State for Navigation Guard
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -53,11 +62,15 @@ const App = () => {
     });
   }, []);
 
-  const refreshData = async () => {
+  const refreshData = async (force = false) => {
+    // Chains
+    if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
+
     setLoading(true);
     try {
       const data = await db.getAllChains();
       setChains(data);
+      setLastChainFetch(Date.now());
       setDbConfigError(false);
     } catch (e: any) {
       if (e.message && e.message.includes('Database not configured')) {
@@ -68,14 +81,26 @@ const App = () => {
     }
   };
 
-  const loadArtists = async () => {
+  const loadArtists = async (force = false) => {
+      if (!force && artistsCache && Date.now() - lastArtistFetch < CACHE_TTL) return;
       const data = await db.getAllArtists();
       setArtistsCache(data.sort((a, b) => a.name.localeCompare(b.name)));
+      setLastArtistFetch(Date.now());
   };
 
-  const loadInspirations = async () => {
+  const loadInspirations = async (force = false) => {
+      if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
       const data = await db.getAllInspirations();
       setInspirationsCache(data);
+      setLastInspirationFetch(Date.now());
+  };
+
+  const loadUsers = async (force = false) => {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      if (!force && usersCache && Date.now() - lastUserFetch < CACHE_TTL) return;
+      const data = await db.getUsers();
+      setUsersCache(data);
+      setLastUserFetch(Date.now());
   };
 
   useEffect(() => {
@@ -101,9 +126,14 @@ const App = () => {
 
     setSelectedId(id);
     setView(newView);
-    // Only refresh if we have no data (Cache strategy)
-    if (newView === 'list' && chains.length === 0 && !loading) {
-       refreshData(); 
+    
+    // Auto-load data based on view, respecting cache
+    if (newView === 'list') refreshData();
+    if (newView === 'library') loadArtists();
+    if (newView === 'inspiration') loadInspirations();
+    if (newView === 'admin' && currentUser?.role === 'admin') {
+        loadArtists();
+        loadUsers();
     }
   };
 
@@ -123,12 +153,15 @@ const App = () => {
       await db.logout();
       setCurrentUser(null);
       setLoginUser(''); setLoginPass('');
+      // Clear sensitive cache
+      setUsersCache(null);
+      setInspirationsCache(null);
   };
 
   const handleCreateChain = async (name: string, desc: string) => {
     setLoading(true);
     await db.createChain(name, desc);
-    await refreshData();
+    await refreshData(true);
     setLoading(false);
   };
 
@@ -136,19 +169,19 @@ const App = () => {
       const name = chain.name + ' (Fork)';
       await db.createChain(name, chain.description, chain);
       notify('Fork 成功！已保存到您的列表');
-      await refreshData();
+      await refreshData(true);
       setView('list');
   };
 
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
       await db.updateChain(id, updates);
-      await refreshData();
+      await refreshData(true);
   };
 
   const handleDelete = async (id: string) => {
     setLoading(true);
     await db.deleteChain(id);
-    await refreshData();
+    await refreshData(true);
     if (selectedId === id) setView('list');
     setLoading(false);
   };
@@ -206,7 +239,7 @@ const App = () => {
                     onCreate={handleCreateChain} 
                     onSelect={(id) => handleNavigate('edit', id)} 
                     onDelete={handleDelete}
-                    onRefresh={refreshData}
+                    onRefresh={() => refreshData(true)}
                     isLoading={loading}
                     notify={notify}
                />;
@@ -227,18 +260,24 @@ const App = () => {
                     isDark={isDark} 
                     toggleTheme={toggleTheme} 
                     artistsData={artistsCache} 
-                    onRefresh={loadArtists} 
+                    onRefresh={() => loadArtists(true)} 
                     notify={notify}
                  />;
       case 'inspiration':
           return <InspirationGallery 
                     currentUser={currentUser} 
                     inspirationsData={inspirationsCache} 
-                    onRefresh={loadInspirations} 
+                    onRefresh={() => loadInspirations(true)} 
                     notify={notify}
                  />;
       case 'admin':
-          return <ArtistAdmin currentUser={currentUser} />;
+          return <ArtistAdmin 
+                    currentUser={currentUser} 
+                    artistsData={artistsCache}
+                    usersData={usersCache}
+                    onRefreshArtists={() => loadArtists(true)}
+                    onRefreshUsers={() => loadUsers(true)}
+                 />;
       case 'history':
           return <GenHistory currentUser={currentUser} notify={notify} />;
       default:

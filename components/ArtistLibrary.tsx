@@ -78,15 +78,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   const [importText, setImportText] = useState('');
   const [gachaCount, setGachaCount] = useState(3);
 
-  // Load data via Props (Caching)
+  // Load data via Props (Caching handled in App)
   useEffect(() => {
-    const initData = async () => {
-        if (!artistsData) {
-            handleRefresh();
-        }
-    };
-    initData();
-
     const savedFav = localStorage.getItem('nai_fav_artists');
     if (savedFav) setFavorites(new Set(JSON.parse(savedFav)));
     
@@ -319,7 +312,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                     onClick={gacha}
                     className="h-8 px-3 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-transform active:scale-95 flex items-center gap-1"
                 >
-                    🎲 选
+                    🎲 帮我选
                 </button>
             </div>
         </div>

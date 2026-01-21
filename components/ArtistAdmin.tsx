@@ -5,57 +5,57 @@ import { Artist, User } from '../types';
 
 interface ArtistAdminProps {
     currentUser: User;
+    artistsData: Artist[] | null;
+    usersData: User[] | null;
+    onRefreshArtists: () => Promise<void>;
+    onRefreshUsers: () => Promise<void>;
 }
 
-export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser }) => {
+export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser, artistsData, usersData, onRefreshArtists, onRefreshUsers }) => {
   const isAdmin = currentUser.role === 'admin';
   const [activeTab, setActiveTab] = useState<'artist' | 'users' | 'profile'>(isAdmin ? 'artist' : 'profile');
   
-  // Artist State
-  const [artists, setArtists] = useState<Artist[]>([]);
+  // Artist State (Managed via props now, filtered here if needed)
+  const artists = artistsData || [];
+  
+  // User Management State
+  const users = usersData || [];
+  
   const [artistName, setArtistName] = useState('');
   const [artistImg, setArtistImg] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  // User Management State
-  const [users, setUsers] = useState<User[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
   // Profile State
   const [myNewPassword, setMyNewPassword] = useState('');
 
-  useEffect(() => {
-    if (activeTab === 'artist' && isAdmin) refreshArtists();
-    if (activeTab === 'users' && isAdmin) refreshUsers();
-  }, [activeTab]);
-
-  const refreshArtists = async () => {
-    const data = await db.getAllArtists();
-    setArtists(data.sort((a, b) => a.name.localeCompare(b.name)));
-  };
-
-  const refreshUsers = async () => {
-      const data = await db.getUsers();
-      setUsers(data);
+  const handleRefresh = async () => {
+      setIsLoading(true);
+      if (activeTab === 'artist') await onRefreshArtists();
+      if (activeTab === 'users') await onRefreshUsers();
+      setIsLoading(false);
   };
 
   const handleArtistSave = async () => {
     if (!artistName.trim() || !artistImg.trim()) return;
+    setIsLoading(true);
     const id = editingId || crypto.randomUUID();
     await db.saveArtist({ id, name: artistName.trim(), imageUrl: artistImg });
     
     setArtistName(''); 
     setArtistImg(''); 
     setEditingId(null);
-    refreshArtists();
+    await onRefreshArtists();
+    setIsLoading(false);
   };
 
   const handleEditArtist = (artist: Artist) => {
       setEditingId(artist.id);
       setArtistName(artist.name);
       setArtistImg(artist.imageUrl);
-      // Removed scrollTo, sticky handles visibility
   };
 
   const handleCancelEdit = () => {
@@ -66,25 +66,31 @@ export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser }) => {
 
   const handleArtistDelete = async (id: string) => {
       if(confirm('确定删除该画师吗？')) {
+          setIsLoading(true);
           await db.deleteArtist(id);
-          refreshArtists();
+          await onRefreshArtists();
+          setIsLoading(false);
       }
   };
 
   const handleCreateUser = async () => {
       if(!newUsername || !newPassword) return;
+      setIsLoading(true);
       try {
         await db.createUser(newUsername, newPassword);
         setNewUsername(''); setNewPassword('');
-        refreshUsers();
+        await onRefreshUsers();
         alert('用户创建成功');
       } catch(e) { alert('创建失败：用户名可能已存在'); }
+      setIsLoading(false);
   };
 
   const handleDeleteUser = async (id: string) => {
       if(confirm('删除用户？')) {
+          setIsLoading(true);
           await db.deleteUser(id);
-          refreshUsers();
+          await onRefreshUsers();
+          setIsLoading(false);
       }
   };
 
@@ -105,9 +111,20 @@ export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser }) => {
   };
 
   return (
-    <div className="flex-1 bg-gray-50 dark:bg-gray-900 p-8 overflow-y-auto">
+    <div className="flex-1 bg-gray-50 dark:bg-gray-900 p-8 overflow-y-auto relative">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">系统管理</h1>
+        <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">系统管理</h1>
+            {isAdmin && activeTab !== 'profile' && (
+                <button 
+                    onClick={handleRefresh} 
+                    className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${isLoading ? 'animate-spin' : ''}`}
+                    title="刷新列表"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                </button>
+            )}
+        </div>
 
         <div className="flex space-x-4 mb-8 border-b border-gray-200 dark:border-gray-700">
             {isAdmin && (

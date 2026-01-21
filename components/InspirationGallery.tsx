@@ -62,14 +62,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [upImg, setUpImg] = useState('');
   const [upPrompt, setUpPrompt] = useState('');
 
-  useEffect(() => {
-    const initData = async () => {
-        if (!inspirationsData) {
-            handleRefresh();
-        }
-    };
-    initData();
-  }, []);
+  // Initial load handled by App.tsx now
+  // removed empty useEffect that called load
 
   const handleRefresh = async () => {
       setIsLoading(true);

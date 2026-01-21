@@ -58,7 +58,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-xl shadow-lg">
             N
           </div>
-          <span className="hidden md:block font-bold text-lg tracking-wide text-gray-800 dark:text-gray-200">咒语终端</span>
+          <span className="hidden md:block font-bold text-lg tracking-wide text-gray-800 dark:text-gray-200">咒语构建终端</span>
         </div>
 
         <nav className="flex-1 p-4 space-y-2">
