@@ -131,9 +131,11 @@ const App = () => {
     if (newView === 'list') refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
-    if (newView === 'admin' && currentUser?.role === 'admin') {
+    if (newView === 'admin') {
+        // Admin view handles both artist and user loading internally via props now, 
+        // but we trigger it here to ensure fresh data if needed or respect cache
         loadArtists();
-        loadUsers();
+        if(currentUser?.role === 'admin') loadUsers();
     }
   };
 
@@ -277,6 +279,9 @@ const App = () => {
                     usersData={usersCache}
                     onRefreshArtists={() => loadArtists(true)}
                     onRefreshUsers={() => loadUsers(true)}
+                    isDark={isDark}
+                    toggleTheme={toggleTheme}
+                    onLogout={handleLogout}
                  />;
       case 'history':
           return <GenHistory currentUser={currentUser} notify={notify} />;

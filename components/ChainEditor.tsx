@@ -5,6 +5,7 @@ import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
+import { extractMetadata } from '../services/metadataService';
 
 interface ChainEditorProps {
   chain: PromptChain;
@@ -35,11 +36,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const [basePrompt, setBasePrompt] = useState(chain.basePrompt || '');
   const [negativePrompt, setNegativePrompt] = useState(chain.negativePrompt || '');
   const [modules, setModules] = useState<PromptModule[]>(chain.modules || []);
-  const [params, setParams] = useState(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
+  const [params, setParams] = useState(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: -1 });
   
   // --- New: Subject/Variable Prompt State ---
-  // Using variableValues['subject'] for persistence to avoid DB migration, 
-  // but conceptually this is a single "Subject" field now.
   const [subjectPrompt, setSubjectPrompt] = useState('');
   
   const [hasChanges, setHasChanges] = useState(false);
@@ -57,30 +56,30 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   // --- Generation State ---
   const [apiKey, setApiKey] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isUploading, setIsUploading] = useState(false); // New Upload State
+  const [isUploading, setIsUploading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   
   // --- Initialization ---
   useEffect(() => {
     setBasePrompt(chain.basePrompt || '');
     setNegativePrompt(chain.negativePrompt || '');
-    // Ensure modules have a default position if missing
     setModules((chain.modules || []).map(m => ({
         ...m,
         position: m.position || 'post'
     })));
-    setParams(chain.params || { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
+    setParams({
+        width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: -1,
+        ...chain.params
+    });
     setChainName(chain.name);
     setChainDesc(chain.description);
     
-    // Initialize Subject Prompt from persisted variableValues or empty
     const savedVars = chain.variableValues || {};
-    // If saving vars is empty (legacy chains or new backend logic didn't catch), default to 1girl
     setSubjectPrompt(savedVars['subject'] || '1girl');
     
-    // Initialize module active state from saved state
     const initialModules: Record<string, boolean> = {};
     if (chain.modules) {
       chain.modules.forEach(m => {
@@ -104,7 +103,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
         }))
     } as any; 
     
-    // Compile using new logic: Base + Pre + Subject + Post
     const compiled = compilePrompt(tempChain, subjectPrompt);
     setFinalPrompt(compiled);
   }, [basePrompt, modules, activeModules, subjectPrompt]);
@@ -117,7 +115,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const getDownloadFilename = () => {
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
-      // NAI-YYYY-MM-DD-HH-MI-SS.png
       const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
       return `NAI-${timestamp}.png`;
   };
@@ -154,7 +151,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   };
 
   const handleResolutionChange = (mode: string) => {
-    if (!isOwner && mode !== 'Custom') return; // Can modify if simulating but not saving
+    if (!isOwner && mode !== 'Custom') return;
     if (isOwner) {
         if (mode === 'Custom') return;
         const res = RESOLUTIONS[mode as keyof typeof RESOLUTIONS];
@@ -169,19 +166,105 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     if (w === 832 && h === 1216) return 'Portrait';
     if (w === 1216 && h === 832) return 'Landscape';
     if (w === 1024 && h === 1024) return 'Square';
-    return ''; // Invalid/Custom
+    return '';
   };
+
+  // --- Import Logic ---
+  const handleImportImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!isOwner) return;
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const rawMeta = await extractMetadata(file);
+      if (!rawMeta) {
+          notify('无法读取图片信息或非 PNG 图片', 'error');
+          return;
+      }
+
+      if (!confirm('是否用该图片的参数覆盖当前 Base Prompt、Negative Prompt 和参数设置？\n(Subject 和 模块不会被修改)')) return;
+
+      try {
+          // Attempt to parse standard NAI text format first
+          // Format: "Positive Prompt... \n Negative prompt: ... \n Steps: 28, ..."
+          let prompt = rawMeta;
+          let negative = '';
+          let newParams: any = { ...params };
+
+          // 1. Try JSON parse (metadata sometimes is JSON)
+          try {
+              const json = JSON.parse(rawMeta);
+              if (json.prompt) prompt = json.prompt;
+              if (json.uc) negative = json.uc;
+              if (json.steps) newParams.steps = json.steps;
+              if (json.scale) newParams.scale = json.scale;
+              if (json.seed) newParams.seed = json.seed;
+              if (json.sampler) newParams.sampler = json.sampler;
+              if (json.width) newParams.width = json.width;
+              if (json.height) newParams.height = json.height;
+          } catch(e) {
+              // Not JSON, fall back to text parsing
+              const negIndex = rawMeta.indexOf('Negative prompt:');
+              const stepsIndex = rawMeta.indexOf('Steps:');
+
+              if (stepsIndex !== -1) {
+                  const paramStr = rawMeta.substring(stepsIndex);
+                  
+                  // Extract Params
+                  const getVal = (key: string) => {
+                      const regex = new RegExp(`${key}:\\s*([^,]+)`);
+                      const match = paramStr.match(regex);
+                      return match ? match[1].trim() : null;
+                  };
+
+                  const steps = getVal('Steps');
+                  const sampler = getVal('Sampler');
+                  const scale = getVal('CFG scale');
+                  const seed = getVal('Seed');
+                  const size = getVal('Size');
+
+                  if (steps) newParams.steps = parseInt(steps);
+                  if (sampler) newParams.sampler = sampler.toLowerCase().replace(/ /g, '_'); // loose mapping
+                  if (scale) newParams.scale = parseFloat(scale);
+                  if (seed) newParams.seed = parseInt(seed);
+                  if (size) {
+                      const [w, h] = size.split('x').map(Number);
+                      newParams.width = w;
+                      newParams.height = h;
+                  }
+                  
+                  // Cut prompt strings
+                  const endOfPrompts = stepsIndex;
+                  if (negIndex !== -1 && negIndex < stepsIndex) {
+                      prompt = rawMeta.substring(0, negIndex).trim();
+                      negative = rawMeta.substring(negIndex + 16, stepsIndex).trim();
+                  } else {
+                      prompt = rawMeta.substring(0, stepsIndex).trim();
+                  }
+              }
+          }
+
+          setBasePrompt(prompt);
+          setNegativePrompt(negative);
+          setParams(newParams);
+          setHasChanges(true);
+          notify('参数已导入');
+      } catch (e: any) {
+          notify('解析失败: ' + e.message, 'error');
+      }
+      
+      // Reset input
+      if (importInputRef.current) importInputRef.current.value = '';
+  };
+
 
   const handleSaveAll = () => {
       if (!isOwner) return;
       
-      // Update module persistence based on current toggle state
       const updatedModules = modules.map(m => ({
           ...m,
           isActive: activeModules[m.id] ?? true
       }));
 
-      // Store subject prompt in variableValues for persistence
       const varValues = { 'subject': subjectPrompt };
 
       onUpdateChain(chain.id, {
@@ -217,7 +300,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const toggleModuleActive = (id: string) => {
     setActiveModules(prev => {
         const newState = { ...prev, [id]: !prev[id] };
-        if (isOwner) setHasChanges(true); // Toggle should mark as dirty for saving
+        if (isOwner) setHasChanges(true);
         return newState;
     });
   };
@@ -230,11 +313,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     setIsGenerating(true);
     setErrorMsg(null);
     try {
-        const img = await generateImage(apiKey, finalPrompt, negativePrompt, params);
+        // Use -1 or empty to denote random seed in UI, but service expects a number if provided.
+        // naiService logic: if params.seed is undefined/null, it randomizes. 
+        // We pass it through. If user set -1, we can randomize here or let service do it.
+        const activeParams = { ...params };
+        if (activeParams.seed === -1) delete activeParams.seed;
+
+        const img = await generateImage(apiKey, finalPrompt, negativePrompt, activeParams);
         setGeneratedImage(img);
         
-        // Auto-save to Local History
-        await localHistory.add(img, finalPrompt, params);
+        await localHistory.add(img, finalPrompt, activeParams);
         
     } catch (e: any) {
         setErrorMsg(e.message);
@@ -249,17 +337,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     if(confirm('将当前生成的图片设为该画师串的封面图？\n\n警告：此操作将永久删除旧的封面图（如果是上传的图片）。')) {
         setIsUploading(true);
         try {
-            // Convert Base64 to File object for upload
             const res = await fetch(generatedImage);
             const blob = await res.blob();
-            
-            // Create proper File object for upload
             const file = new File([blob], getDownloadFilename(), { type: 'image/png' });
 
-            // 1. Upload Binary (Direct)
             const uploadRes = await api.uploadFile(file, 'covers');
-            
-            // 2. Update Chain with URL
             await onUpdateChain(chain.id, { previewImage: uploadRes.url });
             notify('封面已更新 (刷新列表查看效果)');
         } catch(e: any) {
@@ -278,10 +360,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
       if(confirm('您确定要上传新封面吗？\n\n警告：此操作将永久删除旧的封面图文件。')) {
           setIsUploading(true);
           try {
-              // 1. Upload Binary (Direct)
               const res = await api.uploadFile(file, 'covers');
-              
-              // 2. Update Chain with URL
               await onUpdateChain(chain.id, { previewImage: res.url });
               notify('封面已更新');
           } catch(err: any) {
@@ -290,7 +369,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
               setIsUploading(false);
           }
       } else {
-          // Clear input if cancelled
           if (fileInputRef.current) fileInputRef.current.value = '';
       }
   };
@@ -308,34 +386,38 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* Top Bar */}
-      <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-4 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1 overflow-hidden">
+      <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-3 flex items-center justify-between gap-2 md:gap-4 overflow-x-hidden">
+        <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
           <button onClick={onBack} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
           </button>
           
           {isEditingInfo && isOwner ? (
-              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 flex-1 max-w-2xl">
-                  <input type="text" value={chainName} onChange={e => {setChainName(e.target.value); setHasChanges(true)}} className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold" />
-                  <input type="text" value={chainDesc} onChange={e => {setChainDesc(e.target.value); setHasChanges(true)}} className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm flex-1 focus:border-indigo-500 outline-none" />
-                  <button 
-                    onClick={() => setIsEditingInfo(false)} 
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium flex-shrink-0"
-                  >
-                    确定
-                  </button>
+              <div className="flex flex-col md:flex-row gap-2 flex-1 w-full max-w-2xl">
+                  <input type="text" value={chainName} onChange={e => {setChainName(e.target.value); setHasChanges(true)}} className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold" placeholder="名称" />
+                  <div className="flex gap-2">
+                    <input type="text" value={chainDesc} onChange={e => {setChainDesc(e.target.value); setHasChanges(true)}} className="flex-1 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm focus:border-indigo-500 outline-none" placeholder="描述" />
+                    <button 
+                        onClick={() => setIsEditingInfo(false)} 
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium flex-shrink-0 whitespace-nowrap"
+                    >
+                        确定
+                    </button>
+                  </div>
               </div>
           ) : (
-             <div className="flex items-center gap-2 group cursor-pointer overflow-hidden" onClick={() => isOwner && setIsEditingInfo(true)}>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">{chainName}</h1>
-                <span className="text-gray-500 dark:text-gray-500 text-sm hidden md:inline truncate max-w-xs">{chainDesc}</span>
-                {isOwner && <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>}
+             <div className="flex items-center gap-2 group cursor-pointer min-w-0" onClick={() => isOwner && setIsEditingInfo(true)}>
+                <div className="flex flex-col md:flex-row md:items-baseline gap-0.5 md:gap-2 overflow-hidden">
+                    <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white truncate">{chainName}</h1>
+                    <span className="text-xs text-gray-500 dark:text-gray-500 truncate block max-w-[150px] md:max-w-xs">{chainDesc}</span>
+                </div>
+                {isOwner && <svg className="w-4 h-4 text-gray-400 opacity-50 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>}
              </div>
           )}
         </div>
         
-        <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
-             <div className="flex gap-2">
+        <div className="flex items-center gap-1 md:gap-4 flex-shrink-0 ml-auto">
+             <div className="flex gap-1">
                 <button 
                     onClick={() => copyPromptToClipboard(false)} 
                     className="p-1.5 rounded text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
@@ -356,7 +438,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                 <input 
                     type="password" 
                     placeholder="API Key" 
-                    className="w-20 md:w-32 focus:w-40 md:focus:w-64 transition-all bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm text-gray-800 dark:text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-16 md:w-32 focus:w-40 md:focus:w-64 transition-all bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm text-gray-800 dark:text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
                     value={apiKey}
                     onChange={(e) => handleApiKeyChange(e.target.value)}
                 />
@@ -365,9 +447,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
             {!isOwner && (
                 <button
                     onClick={handleFork}
-                    className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
+                    className="px-2 md:px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
                 >
-                    <svg className="w-4 h-4 mr-1 md:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                    <svg className="w-4 h-4 md:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
                     <span className="hidden md:inline">Fork</span>
                 </button>
             )}
@@ -389,6 +471,25 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   <section>
                     <div className="flex justify-between items-end mb-2">
                         <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">1. 基础 Prompt (Base)</label>
+                        {/* Import Button */}
+                        {isOwner && (
+                            <div>
+                                <input 
+                                    type="file" 
+                                    ref={importInputRef}
+                                    className="hidden" 
+                                    accept="image/png" 
+                                    onChange={handleImportImage}
+                                />
+                                <button 
+                                    onClick={() => importInputRef.current?.click()}
+                                    className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 flex items-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                    导入配置
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <textarea
                       disabled={!isOwner}
@@ -420,7 +521,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                         value={mod.name}
                                         onChange={(e) => handleModuleChange(idx, 'name', e.target.value)}
                                     />
-                                    {/* Pre/Post Toggle */}
                                     <div className="flex bg-gray-200 dark:bg-gray-700 rounded p-0.5 ml-auto flex-shrink-0">
                                         <button 
                                             onClick={() => handleModuleChange(idx, 'position', 'pre')}
@@ -500,6 +600,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                  <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm" 
                                     value={params.scale} 
                                     onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); if(isOwner) setHasChanges(true);}}
+                                 />
+                             </div>
+                             {/* Seed Input */}
+                             <div className="flex-1">
+                                 <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Seed (-1随机)</label>
+                                 <input 
+                                    type="text" 
+                                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm" 
+                                    value={params.seed ?? -1} 
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        setParams({...params, seed: isNaN(val) ? -1 : val}); 
+                                        if(isOwner) setHasChanges(true);
+                                    }}
                                  />
                              </div>
                          </div>

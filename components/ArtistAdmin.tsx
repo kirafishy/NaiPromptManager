@@ -9,9 +9,36 @@ interface ArtistAdminProps {
     usersData: User[] | null;
     onRefreshArtists: () => Promise<void>;
     onRefreshUsers: () => Promise<void>;
+    // Injected from App via Layout usually, but here props are from App
+    // We need access to toggleTheme and logout in App context or passed props
+    // The current ArtistAdmin doesn't have these props, but App.tsx passes only specific props.
+    // I will need to update App.tsx to pass onLogout and toggleTheme to ArtistAdmin or use Context.
+    // However, adhering to "minimal diff", I can check if I can get them or trigger global event?
+    // Better: Update App.tsx to pass these.
 }
 
-export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser, artistsData, usersData, onRefreshArtists, onRefreshUsers }) => {
+// Update App.tsx first to pass these props? 
+// No, I'll update ArtistAdminProps definition here assuming App.tsx will be updated in next block.
+// Wait, user rule: "Do not change function signature randomly".
+// But to fix mobile issue, I MUST pass these.
+// I will update App.tsx to pass `toggleTheme`, `isDark`, `onLogout` to ArtistAdmin.
+
+// Re-defining props for this component update
+interface ExtendedArtistAdminProps {
+    currentUser: User;
+    artistsData: Artist[] | null;
+    usersData: User[] | null;
+    onRefreshArtists: () => Promise<void>;
+    onRefreshUsers: () => Promise<void>;
+    isDark?: boolean;
+    toggleTheme?: () => void;
+    onLogout?: () => void;
+}
+
+export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({ 
+    currentUser, artistsData, usersData, onRefreshArtists, onRefreshUsers, 
+    isDark, toggleTheme, onLogout 
+}) => {
   const isAdmin = currentUser.role === 'admin';
   const [activeTab, setActiveTab] = useState<'artist' | 'users' | 'profile'>(isAdmin ? 'artist' : 'profile');
   
@@ -118,22 +145,22 @@ export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser, artistsDa
             {isAdmin && activeTab !== 'profile' && (
                 <button 
                     onClick={handleRefresh} 
-                    className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${isLoading ? 'animate-spin' : ''}`}
+                    className={`p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`}
                     title="刷新列表"
                 >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
             )}
         </div>
 
-        <div className="flex space-x-4 mb-8 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex space-x-4 mb-8 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
             {isAdmin && (
                 <>
-                    <button onClick={() => setActiveTab('artist')} className={`pb-3 px-2 border-b-2 ${activeTab === 'artist' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>画师管理</button>
-                    <button onClick={() => setActiveTab('users')} className={`pb-3 px-2 border-b-2 ${activeTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>用户管理</button>
+                    <button onClick={() => setActiveTab('artist')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'artist' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>画师管理</button>
+                    <button onClick={() => setActiveTab('users')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>用户管理</button>
                 </>
             )}
-            <button onClick={() => setActiveTab('profile')} className={`pb-3 px-2 border-b-2 ${activeTab === 'profile' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>个人设置</button>
+            <button onClick={() => setActiveTab('profile')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'profile' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>个人设置</button>
         </div>
 
         {/* --- ARTIST TAB --- */}
@@ -161,11 +188,11 @@ export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser, artistsDa
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-20">
                     {artists.map(a => (
                         <div key={a.id} className="bg-white dark:bg-gray-800 p-4 rounded shadow flex items-center justify-between group hover:shadow-md transition-shadow">
-                            <div className="flex items-center gap-2">
-                                <img src={a.imageUrl} className="w-8 h-8 rounded object-cover" loading="lazy" />
-                                <span className="dark:text-white font-bold text-sm">{a.name}</span>
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                <img src={a.imageUrl} className="w-8 h-8 rounded object-cover flex-shrink-0" loading="lazy" />
+                                <span className="dark:text-white font-bold text-sm truncate">{a.name}</span>
                             </div>
-                            <div className="flex gap-2 text-xs">
+                            <div className="flex gap-2 text-xs flex-shrink-0 ml-2">
                                 <button onClick={() => handleEditArtist(a)} className="text-indigo-500 hover:text-indigo-700 font-medium">编辑</button>
                                 <button onClick={() => handleArtistDelete(a.id)} className="text-red-500 hover:text-red-700">删除</button>
                             </div>
@@ -186,30 +213,53 @@ export const ArtistAdmin: React.FC<ArtistAdminProps> = ({ currentUser, artistsDa
                         <button onClick={handleCreateUser} className="bg-indigo-600 text-white px-4 rounded">创建</button>
                     </div>
                 </div>
-                <table className="w-full bg-white dark:bg-gray-800 rounded shadow">
-                    <thead><tr className="text-left border-b dark:border-gray-700 text-gray-500 p-2"><th className="p-4">用户名</th><th className="p-4">角色</th><th className="p-4">注册时间</th><th className="p-4">操作</th></tr></thead>
-                    <tbody>
-                        {users.map(u => (
-                            <tr key={u.id} className="border-b dark:border-gray-700 last:border-0 dark:text-white">
-                                <td className="p-4">{u.username}</td>
-                                <td className="p-4"><span className={`px-2 py-1 rounded text-xs ${u.role === 'admin' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{u.role}</span></td>
-                                <td className="p-4 text-sm text-gray-500">{new Date(u.createdAt).toLocaleDateString()}</td>
-                                <td className="p-4">
-                                    {u.id !== currentUser.id && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500">删除</button>}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                    <table className="w-full bg-white dark:bg-gray-800 rounded shadow">
+                        <thead><tr className="text-left border-b dark:border-gray-700 text-gray-500 p-2"><th className="p-4">用户名</th><th className="p-4">角色</th><th className="p-4">注册时间</th><th className="p-4">操作</th></tr></thead>
+                        <tbody>
+                            {users.map(u => (
+                                <tr key={u.id} className="border-b dark:border-gray-700 last:border-0 dark:text-white">
+                                    <td className="p-4">{u.username}</td>
+                                    <td className="p-4"><span className={`px-2 py-1 rounded text-xs ${u.role === 'admin' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{u.role}</span></td>
+                                    <td className="p-4 text-sm text-gray-500">{new Date(u.createdAt).toLocaleDateString()}</td>
+                                    <td className="p-4">
+                                        {u.id !== currentUser.id && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500">删除</button>}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </>
         )}
 
         {/* --- PROFILE TAB --- */}
         {activeTab === 'profile' && (
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
-                <h2 className="font-bold dark:text-white mb-4">修改密码</h2>
-                <input type="password" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white mb-4" placeholder="新密码" />
-                <button onClick={handleChangePassword} className="bg-indigo-600 text-white px-6 py-2 rounded">更新密码</button>
+            <div className="space-y-6">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
+                    <h2 className="font-bold dark:text-white mb-4">修改密码</h2>
+                    <input type="password" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white mb-4" placeholder="新密码" />
+                    <button onClick={handleChangePassword} className="bg-indigo-600 text-white px-6 py-2 rounded">更新密码</button>
+                </div>
+                
+                {/* Mobile / Convenient Settings */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
+                     <h2 className="font-bold dark:text-white mb-4">应用设置</h2>
+                     <div className="space-y-4">
+                        {toggleTheme && (
+                            <button onClick={toggleTheme} className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                                <span>{isDark ? '🌙 深色模式' : '☀️ 亮色模式'}</span>
+                                <span className="text-xs text-gray-500">点击切换</span>
+                            </button>
+                        )}
+                        {onLogout && (
+                            <button onClick={onLogout} className="w-full flex items-center justify-between p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">
+                                <span>退出登录</span>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                            </button>
+                        )}
+                     </div>
+                </div>
             </div>
         )}
       </div>
