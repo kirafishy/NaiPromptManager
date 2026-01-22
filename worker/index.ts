@@ -43,6 +43,7 @@ interface Env {
   BUCKET?: R2Bucket; // R2 Binding
   MASTER_KEY: string; 
   R2_PUBLIC_URL?: string; // Kept for legacy compatibility if needed
+  GUEST_PASSCODE?: string; // Guest Access Code
 }
 
 const corsHeaders = {
@@ -225,7 +226,7 @@ export default {
     }
     const db = env.DB!;
 
-    // Auto Init DB & Default Admin
+    // Auto Init DB & Default Admin / Guest User
     const initDB = async () => {
       const statements = INIT_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
       for (const sql of statements) {
@@ -252,6 +253,16 @@ export default {
               .bind(adminId, 'admin', 'admin_996', 'admin', Date.now()).run();
         }
       } catch (e) { console.error('Admin init failed', e) }
+
+      // Create Default Guest User if not exists
+      try {
+        const guest = await db.prepare('SELECT * FROM users WHERE role = ?').bind('guest').first();
+        if (!guest) {
+            const guestId = 'guest-0000-0000-0000-000000000000'; // Static ID for guest
+            await db.prepare('INSERT INTO users (id, username, password, role, created_at, storage_usage) VALUES (?, ?, ?, ?, ?, 0)')
+              .bind(guestId, 'guest', 'guest_access', 'guest', Date.now()).run();
+        }
+      } catch (e) { console.error('Guest init failed', e) }
     };
 
     // --- Authentication Middleware ---
@@ -290,6 +301,33 @@ export default {
           return json({ success: true });
       }
 
+      // Guest Login
+      if (path === '/api/auth/guest-login' && method === 'POST') {
+          const { passcode } = await request.json() as any;
+          if (!passcode) return error('请输入访问口令', 400);
+          
+          if (passcode !== env.GUEST_PASSCODE) {
+              return error('访问口令错误', 401);
+          }
+
+          // Ensure guest user exists (lazy check)
+          try { await db.prepare('SELECT 1 FROM users WHERE role = ?').bind('guest').first(); } catch(e) { await initDB(); }
+          
+          const guestUser = await db.prepare('SELECT * FROM users WHERE role = ?').bind('guest').first<{id: string, username: string, role: string}>();
+          
+          if (!guestUser) return error('Guest user configuration error', 500);
+
+          const sessionId = crypto.randomUUID();
+          const expiresAt = Date.now() + 1 * 24 * 60 * 60 * 1000; // 1 day for guests
+
+          await db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
+              .bind(sessionId, guestUser.id, expiresAt).run();
+
+          return json({ success: true, user: { id: guestUser.id, username: guestUser.username, role: 'guest', storageUsage: 0 } }, 200, {
+              'Set-Cookie': `session_id=${sessionId}; Expires=${new Date(expiresAt).toUTCString()}; Path=/; SameSite=Lax; HttpOnly`
+          });
+      }
+
       // Login (UPDATED: Hash Support & Lazy Migration)
       if (path === '/api/auth/login' && method === 'POST') {
           const { username, password } = await request.json() as any;
@@ -299,6 +337,7 @@ export default {
               .bind(username).first<{id: string, role: string, storage_usage: number, password: string}>();
 
           if (!user) return error('用户名或密码错误', 401);
+          if (user.role === 'guest') return error('Invalid login method', 401);
 
           let isValid = false;
           let needMigration = false;
@@ -352,7 +391,11 @@ export default {
           });
       }
 
-      // --- NAI Proxy ---
+      // --- Protected Routes Logic ---
+      const currentUser = await getSessionUser();
+      if (!currentUser) return error('Unauthorized', 401);
+
+      // --- NAI Proxy (With Guest Guard Removed) ---
       if (path === '/api/generate' && method === 'POST') {
         const body = await request.json();
         const clientAuth = request.headers.get('Authorization'); 
@@ -369,14 +412,12 @@ export default {
         return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
       }
 
-      // --- Protected Routes Logic ---
-      const currentUser = await getSessionUser();
-      if (!currentUser) return error('Unauthorized', 401);
-
       // --- NEW: Binary Upload Endpoint (Multipart with Streaming) ---
       if (path === '/api/upload' && method === 'POST') {
           if (!env.BUCKET) return error('R2 Bucket not configured', 503);
           
+          if (currentUser.role === 'guest') return error('Guests cannot upload files', 403);
+
           const timings: string[] = [];
           const startTotal = performance.now();
 
@@ -487,6 +528,7 @@ export default {
       }
 
       if (path === '/api/chains' && method === 'POST') {
+        if (currentUser.role === 'guest') return error('Guests cannot create chains', 403);
         const body = await request.json() as any;
         const id = crypto.randomUUID();
         const now = Date.now();
@@ -507,6 +549,7 @@ export default {
 
       const chainIdMatch = path.match(/^\/api\/chains\/([^\/]+)$/);
       if (chainIdMatch && method === 'PUT') {
+        if (currentUser.role === 'guest') return error('Guests cannot update chains', 403);
         const id = chainIdMatch[1];
         const updates = await request.json() as any;
         
@@ -558,6 +601,7 @@ export default {
       }
 
       if (chainIdMatch && method === 'DELETE') {
+        if (currentUser.role === 'guest') return error('Guests cannot delete chains', 403);
         const id = chainIdMatch[1];
         const chain = await db.prepare('SELECT user_id FROM chains WHERE id = ?').bind(id).first<{user_id: string}>();
         if (chain) {
@@ -606,6 +650,7 @@ export default {
       }
       
       if (path === '/api/inspirations' && method === 'POST') {
+        if (currentUser.role === 'guest') return error('Guests cannot upload inspirations', 403);
         const body = await request.json() as any;
         let imageUrl = body.imageUrl;
 
@@ -623,6 +668,7 @@ export default {
       }
       
       if (path === '/api/inspirations/bulk-delete' && method === 'POST') {
+          if (currentUser.role === 'guest') return error('Guests cannot delete inspirations', 403);
           const { ids } = await request.json() as { ids: string[] };
           if (!ids || ids.length === 0) return json({ success: true });
 
@@ -637,6 +683,7 @@ export default {
       }
 
       if (path.startsWith('/api/inspirations/') && method === 'PUT') {
+         if (currentUser.role === 'guest') return error('Guests cannot update inspirations', 403);
          const id = path.split('/').pop();
          const updates = await request.json() as any;
          
@@ -654,6 +701,7 @@ export default {
       }
 
       if (path.startsWith('/api/inspirations/') && method === 'DELETE') {
+         if (currentUser.role === 'guest') return error('Guests cannot delete inspirations', 403);
          const id = path.split('/').pop();
          const item = await db.prepare('SELECT user_id FROM inspirations WHERE id = ?').bind(id).first<{user_id: string}>();
          if (item) {

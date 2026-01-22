@@ -3,27 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/dbService';
 import { Artist, User } from '../types';
 
-interface ArtistAdminProps {
-    currentUser: User;
-    artistsData: Artist[] | null;
-    usersData: User[] | null;
-    onRefreshArtists: () => Promise<void>;
-    onRefreshUsers: () => Promise<void>;
-    // Injected from App via Layout usually, but here props are from App
-    // We need access to toggleTheme and logout in App context or passed props
-    // The current ArtistAdmin doesn't have these props, but App.tsx passes only specific props.
-    // I will need to update App.tsx to pass onLogout and toggleTheme to ArtistAdmin or use Context.
-    // However, adhering to "minimal diff", I can check if I can get them or trigger global event?
-    // Better: Update App.tsx to pass these.
-}
-
-// Update App.tsx first to pass these props? 
-// No, I'll update ArtistAdminProps definition here assuming App.tsx will be updated in next block.
-// Wait, user rule: "Do not change function signature randomly".
-// But to fix mobile issue, I MUST pass these.
-// I will update App.tsx to pass `toggleTheme`, `isDark`, `onLogout` to ArtistAdmin.
-
-// Re-defining props for this component update
 interface ExtendedArtistAdminProps {
     currentUser: User;
     artistsData: Artist[] | null;
@@ -58,6 +37,17 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
 
   // Profile State
   const [myNewPassword, setMyNewPassword] = useState('');
+
+  // Storage calculation helpers
+  const MAX_STORAGE = 300 * 1024 * 1024;
+  const formatBytes = (bytes?: number) => {
+      if (!bytes) return '0 MB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+  const getUsagePercentage = () => {
+      if (!currentUser || !currentUser.storageUsage) return 0;
+      return Math.min(100, (currentUser.storageUsage / MAX_STORAGE) * 100);
+  };
 
   const handleRefresh = async () => {
       setIsLoading(true);
@@ -246,6 +236,22 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
                      <h2 className="font-bold dark:text-white mb-4">应用设置</h2>
                      <div className="space-y-4">
+                        {/* Storage Usage Display (Added for Mobile) */}
+                        {currentUser.role !== 'admin' && (
+                            <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                    <span>云端存储空间</span>
+                                    <span>{formatBytes(currentUser.storageUsage)} / 300MB</span>
+                                </div>
+                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                                    <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${getUsagePercentage() > 90 ? 'bg-red-500' : 'bg-indigo-500'}`} 
+                                        style={{ width: `${getUsagePercentage()}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        )}
+
                         {toggleTheme && (
                             <button onClick={toggleTheme} className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
                                 <span>{isDark ? '🌙 深色模式' : '☀️ 亮色模式'}</span>

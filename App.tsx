@@ -40,6 +40,10 @@ const App = () => {
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
+  
+  // Guest Login State
+  const [isGuestMode, setIsGuestMode] = useState(false);
+  const [guestPasscode, setGuestPasscode] = useState('');
 
   // Theme State
   const [isDark, setIsDark] = useState(() => localStorage.getItem('nai_theme') === 'dark');
@@ -143,7 +147,12 @@ const App = () => {
     e.preventDefault();
     setLoginError('');
     try {
-        const res = await db.login(loginUser, loginPass);
+        let res;
+        if (isGuestMode) {
+            res = await db.guestLogin(guestPasscode);
+        } else {
+            res = await db.login(loginUser, loginPass);
+        }
         setCurrentUser(res.user);
         refreshData();
     } catch (err: any) {
@@ -154,7 +163,8 @@ const App = () => {
   const handleLogout = async () => {
       await db.logout();
       setCurrentUser(null);
-      setLoginUser(''); setLoginPass('');
+      setLoginUser(''); setLoginPass(''); setGuestPasscode('');
+      setIsGuestMode(false);
       // Clear sensitive cache
       setUsersCache(null);
       setInspirationsCache(null);
@@ -201,14 +211,45 @@ const App = () => {
                 </div>
                 
                 <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                    <input type="text" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="用户名" autoFocus />
+                
+                {/* Guest Toggle */}
+                <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg mb-4">
+                    <button 
+                        type="button"
+                        onClick={() => setIsGuestMode(false)}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${!isGuestMode ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                    >
+                        账号登录
+                    </button>
+                    <button 
+                        type="button"
+                        onClick={() => setIsGuestMode(true)}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${isGuestMode ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                    >
+                        游客参观
+                    </button>
                 </div>
-                <div>
-                    <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="密码" />
-                </div>
+
+                {!isGuestMode ? (
+                    <>
+                        <div>
+                            <input type="text" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="用户名" autoFocus />
+                        </div>
+                        <div>
+                            <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none" placeholder="密码" />
+                        </div>
+                    </>
+                ) : (
+                    <div>
+                        <input type="password" value={guestPasscode} onChange={(e) => setGuestPasscode(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white outline-none text-center tracking-widest" placeholder="输入游客口令" autoFocus />
+                        <p className="text-xs text-gray-500 text-center mt-2">游客可查看提示词，填入 API Key 后可测试生图 (数据仅存本地)</p>
+                    </div>
+                )}
+
                 {loginError && <div className="text-red-500 text-sm text-center font-medium animate-pulse">{loginError}</div>}
-                <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg">登录</button>
+                <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg">
+                    {isGuestMode ? '进入参观' : '登录'}
+                </button>
                 </form>
                 
                 <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center text-xs text-gray-400">
@@ -244,6 +285,7 @@ const App = () => {
                     onRefresh={() => refreshData(true)}
                     isLoading={loading}
                     notify={notify}
+                    isGuest={currentUser.role === 'guest'}
                />;
       case 'edit':
         const editChain = getSelectedChain();

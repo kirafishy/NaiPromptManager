@@ -8,6 +8,10 @@ class DBService {
       return await api.post('/auth/login', { username, password });
   }
 
+  async guestLogin(passcode: string): Promise<{success: boolean, user: User}> {
+      return await api.post('/auth/guest-login', { passcode });
+  }
+
   async logout(): Promise<void> {
       await api.post('/auth/logout', {});
   }

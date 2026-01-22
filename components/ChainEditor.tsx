@@ -25,7 +25,9 @@ const RESOLUTIONS = {
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, onUpdateChain, onBack, onFork, setIsDirty, notify }) => {
   // Permission Check
-  const isOwner = chain.userId === currentUser.id || currentUser.role === 'admin';
+  // Guests are strictly viewers but allowed to try generation.
+  const isGuest = currentUser.role === 'guest';
+  const isOwner = !isGuest && (chain.userId === currentUser.id || currentUser.role === 'admin');
 
   // --- Chain Info State ---
   const [chainName, setChainName] = useState(chain.name);
@@ -89,9 +91,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     setActiveModules(initialModules);
     setHasChanges(false);
 
+    // Load API Key for everyone, including guests if they saved it locally
     const savedKey = localStorage.getItem('nai_api_key');
     if (savedKey) setApiKey(savedKey);
-  }, [chain]);
+
+  }, [chain, isGuest]);
 
   // --- Logic: Compilation ---
   useEffect(() => {
@@ -185,31 +189,40 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
 
       try {
           // Attempt to parse standard NAI text format first
-          // Format: "Positive Prompt... \n Negative prompt: ... \n Steps: 28, ..."
           let prompt = rawMeta;
           let negative = '';
           let newParams: any = { ...params };
 
-          // 1. Try JSON parse (metadata sometimes is JSON)
-          try {
-              const json = JSON.parse(rawMeta);
-              if (json.prompt) prompt = json.prompt;
-              if (json.uc) negative = json.uc;
-              if (json.steps) newParams.steps = json.steps;
-              if (json.scale) newParams.scale = json.scale;
-              if (json.seed) newParams.seed = json.seed;
-              if (json.sampler) newParams.sampler = json.sampler;
-              if (json.width) newParams.width = json.width;
-              if (json.height) newParams.height = json.height;
-          } catch(e) {
-              // Not JSON, fall back to text parsing
+          // 1. Try JSON parse (metadata is JSON in the provided format)
+          if (rawMeta.trim().startsWith('{')) {
+              try {
+                  const json = JSON.parse(rawMeta);
+                  
+                  // Map fields based on user provided format
+                  if (json.prompt) prompt = json.prompt;
+                  if (json.uc) negative = json.uc; // "uc" is Negative Prompt in this format
+                  if (json.steps) newParams.steps = json.steps;
+                  if (json.scale) newParams.scale = json.scale;
+                  if (json.seed) newParams.seed = json.seed;
+                  if (json.sampler) newParams.sampler = json.sampler; // e.g. "k_euler"
+                  
+                  if (json.width) newParams.width = json.width;
+                  if (json.height) newParams.height = json.height;
+                  
+                  // Some JSONs put prompt in v4_prompt.caption.base_caption, but usually root prompt is safer for import
+                  // if (json.v4_prompt?.caption?.base_caption) prompt = json.v4_prompt.caption.base_caption;
+
+              } catch(e) {
+                  console.error("JSON parse error despite starting with {", e);
+                  // Fallback to text parsing if JSON parse fails
+              }
+          } else {
+              // Not JSON, fall back to legacy text parsing
               const negIndex = rawMeta.indexOf('Negative prompt:');
               const stepsIndex = rawMeta.indexOf('Steps:');
 
               if (stepsIndex !== -1) {
                   const paramStr = rawMeta.substring(stepsIndex);
-                  
-                  // Extract Params
                   const getVal = (key: string) => {
                       const regex = new RegExp(`${key}:\\s*([^,]+)`);
                       const match = paramStr.match(regex);
@@ -223,7 +236,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   const size = getVal('Size');
 
                   if (steps) newParams.steps = parseInt(steps);
-                  if (sampler) newParams.sampler = sampler.toLowerCase().replace(/ /g, '_'); // loose mapping
+                  if (sampler) newParams.sampler = sampler.toLowerCase().replace(/ /g, '_');
                   if (scale) newParams.scale = parseFloat(scale);
                   if (seed) newParams.seed = parseInt(seed);
                   if (size) {
@@ -232,7 +245,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                       newParams.height = h;
                   }
                   
-                  // Cut prompt strings
                   const endOfPrompts = stepsIndex;
                   if (negIndex !== -1 && negIndex < stepsIndex) {
                       prompt = rawMeta.substring(0, negIndex).trim();
@@ -313,9 +325,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     setIsGenerating(true);
     setErrorMsg(null);
     try {
-        // Use -1 or empty to denote random seed in UI, but service expects a number if provided.
-        // naiService logic: if params.seed is undefined/null, it randomizes. 
-        // We pass it through. If user set -1, we can randomize here or let service do it.
         const activeParams = { ...params };
         if (activeParams.seed === -1) delete activeParams.seed;
 
@@ -444,7 +453,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                 />
             </div>
             
-            {!isOwner && (
+            {!isOwner && !isGuest && (
                 <button
                     onClick={handleFork}
                     className="px-2 md:px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium shadow-lg shadow-green-500/20 flex items-center"
@@ -463,7 +472,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
               <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-24">
                   {!isOwner && (
                       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
-                          您正在查看他人的画师串，无法直接修改。您可以调整参数进行测试，或点击右上角“Fork”保存到您的列表。
+                          {isGuest 
+                            ? '您正在以游客身份浏览，无法保存修改。请在右上角填入 API Key 进行生图测试。'
+                            : '您正在查看他人的画师串，无法直接修改。您可以调整参数进行测试，或点击右上角“Fork”保存到您的列表。'
+                          }
                       </div>
                   )}
 
@@ -662,13 +674,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
 
                   {/* Generated Image */}
                   <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                    className={`w-full py-3 rounded-lg font-bold text-white shadow-lg transition-all mb-4 flex-shrink-0 ${
-                        isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
-                    }`}
-                    >
-                    {isGenerating ? '生成中...' : '生成预览 (自动保存历史)'}
+                      onClick={handleGenerate}
+                      disabled={isGenerating}
+                      className={`w-full py-3 rounded-lg font-bold text-white shadow-lg transition-all mb-4 flex-shrink-0 ${
+                          isGenerating ? 'bg-gray-400 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500'
+                      }`}
+                      >
+                      {isGenerating ? '生成中...' : '生成预览 (自动保存历史)'}
                   </button>
                   {errorMsg && <div className="text-red-500 text-xs mb-2 text-center">{errorMsg}</div>}
                   

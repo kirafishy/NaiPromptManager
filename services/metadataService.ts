@@ -1,3 +1,4 @@
+
 /**
  * Simple PNG Metadata Parser for NAI Images
  * Reads tEXt chunks to find generation data.
@@ -60,7 +61,7 @@ const readPngTextChunks = (buffer: ArrayBuffer): string | null => {
         if (keyword === 'Description' || keyword === 'Comment') {
             const content = decoder.decode(chunkData.slice(nullIndex + 1));
             // Check if it looks like NAI data
-            if (content.includes('Steps:') || content.includes('"prompt":')) {
+            if (content.includes('Steps:') || content.includes('"prompt":') || content.includes('"steps":')) {
                 return content;
             }
         }
@@ -75,12 +76,15 @@ const readPngTextChunks = (buffer: ArrayBuffer): string | null => {
 };
 
 const parseNaiGenerationData = (text: string): string => {
-  // 1. Handle JSON format (some newer versions or tools)
+  // 1. Handle JSON format (Valid NAI JSON metadata)
   if (text.trim().startsWith('{')) {
     try {
+      // Validation check only
       const json = JSON.parse(text);
-      if (json.prompt) return json.prompt;
-      if (json.input) return json.input; // API payload style
+      // If it looks like NAI data, return the RAW JSON string so the editor can parse all fields
+      if (json.prompt || json.steps || json.v4_prompt) {
+          return text;
+      }
     } catch (e) {
       // Ignore JSON error, try text parsing
     }
@@ -88,21 +92,6 @@ const parseNaiGenerationData = (text: string): string => {
 
   // 2. Handle Standard NAI Text Format
   // Format usually: "Prompt text... \n Negative prompt: ... \n Steps: ..."
-  let cleanText = text;
-
-  // Find end of prompt
-  const negIndex = cleanText.indexOf('Negative prompt:');
-  const stepsIndex = cleanText.indexOf('Steps:');
-  const ucIndex = cleanText.indexOf('Undesired Content:'); // Legacy
-
-  let cutoff = cleanText.length;
-
-  if (negIndex !== -1 && negIndex < cutoff) cutoff = negIndex;
-  if (stepsIndex !== -1 && stepsIndex < cutoff) cutoff = stepsIndex;
-  if (ucIndex !== -1 && ucIndex < cutoff) cutoff = ucIndex;
-
-  const prompt = cleanText.substring(0, cutoff).trim();
-  
-  // Remove trailing comma if exists
-  return prompt.replace(/,\s*$/, '');
+  // For text format, we return the whole string because the regex parser in ChainEditor handles it.
+  return text;
 };
