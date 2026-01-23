@@ -244,6 +244,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                       if (v4.caption?.base_caption) {
                           prompt = v4.caption.base_caption;
                       }
+                      // Reset characters and map from V4
+                      newParams.characters = [];
                       if (v4.caption?.char_captions && Array.isArray(v4.caption.char_captions)) {
                           newParams.characters = v4.caption.char_captions.map((cc: any) => ({
                               id: crypto.randomUUID(),
@@ -253,8 +255,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                           }));
                       }
                   } else {
-                      // Reset characters if importing a non-V4 image? 
-                      // Or keep? Let's reset to match the image exactly.
+                      // If it's a JSON import but no v4_prompt, it's likely V3/Legacy.
+                      // We should reset characters to avoid mixing styles.
                       newParams.characters = [];
                   }
 
@@ -299,6 +301,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                       prompt = rawMeta.substring(0, stepsIndex).trim();
                   }
               }
+              // Text import implies legacy format, clear characters
+              newParams.characters = [];
           }
 
           setBasePrompt(prompt);
