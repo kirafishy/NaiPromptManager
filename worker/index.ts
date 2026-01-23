@@ -657,7 +657,7 @@ export default {
              name: a.name,
              imageUrl: a.image_url,
              previewUrl: a.preview_url, // Legacy
-             benchmarks: a.benchmarks ? JSON.parse(a.benchmarks) : [] // New
+             benchmarks: a.benchmarks ? JSON.parse(a.benchmarks) : [] // New: Parse JSON
          })));
       }
       if (path === '/api/artists' && method === 'POST') {
@@ -672,8 +672,7 @@ export default {
         }
 
         // Handle Benchmarks Upload (Expects body.benchmarks as array of strings/dataURIs)
-        // If the client sends an update for a specific slot, they should send the full array with new data
-        // Or we handle specific update logic. Simpler to handle full array.
+        // Ensure benchmarks array exists if not provided
         let benchmarks = body.benchmarks || [];
         if (Array.isArray(benchmarks)) {
             for (let i = 0; i < benchmarks.length; i++) {

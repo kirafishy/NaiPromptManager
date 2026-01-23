@@ -88,7 +88,7 @@ const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
 // Queue Item Interface
 interface GenTask {
     uniqueId: string;
-    artist: Artist;
+    artistId: string;
     slot: number;
 }
 
@@ -300,9 +300,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
           setCurrentTask(task);
 
           try {
+              // Find the artist info
+              const artist = artistsData?.find(a => a.id === task.artistId);
+              if (!artist) {
+                  throw new Error(`Artist ${task.artistId} not found`);
+              }
+
               // Actual generation Logic
               const slotPrompt = config.prompts[task.slot] || config.prompts[0];
-              const prompt = `artist:${task.artist.name}, ${slotPrompt}`;
+              const prompt = `artist:${artist.name}, ${slotPrompt}`;
               const negative = config.negative;
               const seed = config.seed === -1 ? 0 : config.seed;
 
@@ -312,28 +318,18 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
               });
 
               // Construct update payload
-              // We need the latest version of the artist to avoid overwriting parallel updates if any
-              // Ideally we fetch fresh, but for now we rely on the task object + previous updates?
-              // The `onRefresh` helps, but here we optimistically update based on what we have + new data.
-              
-              // Note: `task.artist` might be stale if multiple tasks for same artist run sequentially.
-              // We should fetch the current artist benchmarks from the cache props if possible, 
-              // but props are only updated onRefresh.
-              // A simple fix: Pass full benchmarks array. 
-              // Wait, we need to know the EXISTING benchmarks.
-              // Since we are in a component, we can try to find the up-to-date artist from `artistsData`.
-              
-              const freshArtist = artistsData?.find(a => a.id === task.artist.id) || task.artist;
-              const currentBenchmarks = freshArtist.benchmarks ? [...freshArtist.benchmarks] : (freshArtist.previewUrl ? [freshArtist.previewUrl] : []);
+              // Fetch FRESH benchmarks from current state to avoid overwrites if multiple tasks ran
+              const currentBenchmarks = artist.benchmarks ? [...artist.benchmarks] : (artist.previewUrl ? [artist.previewUrl] : []);
               
               // Pad array
               while(currentBenchmarks.length <= task.slot) currentBenchmarks.push("");
               currentBenchmarks[task.slot] = base64Img;
 
               await api.post('/artists', {
-                  id: task.artist.id,
-                  name: task.artist.name,
-                  imageUrl: task.artist.imageUrl,
+                  id: artist.id,
+                  name: artist.name,
+                  imageUrl: artist.imageUrl,
+                  previewUrl: artist.previewUrl,
                   benchmarks: currentBenchmarks
               });
 
@@ -342,7 +338,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
           } catch (err: any) {
               console.error(err);
-              notify(`生成失败 [${task.artist.name}]: ${err.message}`, 'error');
+              notify(`生成失败: ${err.message}`, 'error');
           } finally {
               // Remove done task and loop
               setTaskQueue(prev => prev.slice(1));
@@ -366,7 +362,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
       const newTasks = slots.map(s => ({
           uniqueId: crypto.randomUUID(),
-          artist,
+          artistId: artist.id,
           slot: s
       }));
 
@@ -535,8 +531,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                  }
 
                  // Task status
-                 const isTaskPending = taskQueue.some(t => t.artist.id === artist.id);
-                 const isTaskRunning = currentTask?.artist.id === artist.id;
+                 const isTaskPending = taskQueue.some(t => t.artistId === artist.id);
+                 const isTaskRunning = currentTask?.artistId === artist.id;
                  
                  return (
                      <div 

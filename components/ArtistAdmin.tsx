@@ -65,7 +65,18 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
     if (!artistName.trim() || !artistImg.trim()) return;
     setIsLoading(true);
     const id = editingId || crypto.randomUUID();
-    await db.saveArtist({ id, name: artistName.trim(), imageUrl: artistImg });
+    
+    // Find existing artist to preserve benchmarks if editing
+    const existing = artists.find(a => a.id === id);
+    const payload = {
+        id,
+        name: artistName.trim(),
+        imageUrl: artistImg,
+        previewUrl: existing?.previewUrl,
+        benchmarks: existing?.benchmarks
+    };
+
+    await db.saveArtist(payload);
     
     setArtistName(''); 
     setArtistImg(''); 
