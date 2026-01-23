@@ -65,8 +65,13 @@ const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
 };
 
 // --- Benchmark Config Interface ---
+interface BenchmarkSlot {
+    label: string;
+    prompt: string;
+}
+
 interface BenchmarkConfig {
-    prompts: string[]; // [Slot 1, Slot 2, Slot 3]
+    slots: BenchmarkSlot[]; // Flexible slots
     negative: string;
     seed: number;
     steps: number;
@@ -74,15 +79,24 @@ interface BenchmarkConfig {
 }
 
 const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
-    prompts: [
-        "1girl, portrait, face focus, detailed eyes, hands on face, detailed fingers, expression, masterpiece, best quality",
-        "1girl, cowboy shot, detailed torso, anatomy focus, detailed skin, soft lighting, masterpiece, best quality",
-        "1girl, full body, wide shot, detailed background, complex scene, perspective, scenery, masterpiece, best quality"
+    slots: [
+        { 
+            label: "面部", 
+            prompt: "masterpiece, best quality, 1girl, solo,\ncowboy shot, slight tilt head, three-quarter view,\nhand on face, peace sign, index finger raised, (dynamic pose),\ndetailed face, detailed eyes, blushing, happy, open mouth,\nmessy hair, hair ornament,\nwhite shirt, collarbone,\nsimple background, soft lighting, " 
+        },
+        { 
+            label: "体态", 
+            prompt: "masterpiece, best quality, 1girl, solo,\nkneeling, from above, looking at viewer,\nbikini, wet skin, long hair, medium breasts, soft shading, clear form, (detailed anatomy:1.1), extremely detailed figure, \nstomach, navel, cleavage, collarbone, beautiful hands,\nthighs, barefoot,\nbeach, ocean, cinematic lighting, detailed characters, amazing quality, very aesthetic, absurdres, high detail, ultra-detailed," 
+        },
+        { 
+            label: "场景", 
+            prompt: "masterpiece, best quality, 1girl, solo,\nfull body, wide shot, walking, looking back,\nfantasy clothes, cape, armor, holding sword,\nwind, hair blowing, petals,\nruins, forest, overgrown, detailed background, depth of field,\ndappled sunlight, atmospheric, intricate details," 
+        }
     ],
-    negative: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+    negative: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name,",
     seed: -1, // Random
     steps: 28,
-    scale: 5
+    scale: 6
 };
 
 // Queue Item Interface
@@ -111,7 +125,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   
   // Benchmark / Preview Mode State
   const [viewMode, setViewMode] = useState<'original' | 'benchmark'>('original');
-  const [activeSlot, setActiveSlot] = useState<number>(0); // 0, 1, 2
+  const [activeSlot, setActiveSlot] = useState<number>(0); // Index of config.slots
   
   // Benchmark Settings
   const [showConfig, setShowConfig] = useState(false);
@@ -121,6 +135,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   // Queue System
   const [taskQueue, setTaskQueue] = useState<GenTask[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPaused, setIsPaused] = useState(false); // New Pause State
   const [currentTask, setCurrentTask] = useState<GenTask | null>(null);
 
   // Load data & Config
@@ -135,7 +150,26 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     if (savedHistory) setHistory(JSON.parse(savedHistory));
 
     const savedConfig = localStorage.getItem('nai_benchmark_config');
-    if (savedConfig) setConfig(JSON.parse(savedConfig));
+    if (savedConfig) {
+        try {
+            const parsed = JSON.parse(savedConfig);
+            // Migration Logic: Convert old 'prompts' array to 'slots'
+            if (parsed.prompts && Array.isArray(parsed.prompts) && !parsed.slots) {
+                parsed.slots = parsed.prompts.map((p: string, i: number) => ({
+                    label: i === 0 ? '面部' : i === 1 ? '体态' : i === 2 ? '场景' : `分组 ${i+1}`,
+                    prompt: p
+                }));
+                delete parsed.prompts;
+            }
+            // Ensure default slots if empty (prevent crash)
+            if (!parsed.slots || parsed.slots.length === 0) {
+                parsed.slots = DEFAULT_BENCHMARK_CONFIG.slots;
+            }
+            setConfig(parsed);
+        } catch(e) {
+            console.error("Config parse error", e);
+        }
+    }
 
     const savedKey = localStorage.getItem('nai_api_key');
     if (savedKey) setApiKey(savedKey);
@@ -285,15 +319,40 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   };
 
   const saveConfig = () => {
+      // Basic validation
+      if (config.slots.length === 0) {
+          notify('至少需要一个测试分组', 'error');
+          return;
+      }
       localStorage.setItem('nai_benchmark_config', JSON.stringify(config));
       setShowConfig(false);
       notify('配置已保存');
   };
 
+  // Config Modal Helper Functions
+  const updateSlot = (index: number, field: keyof BenchmarkSlot, value: string) => {
+      const newSlots = [...config.slots];
+      newSlots[index] = { ...newSlots[index], [field]: value };
+      setConfig({ ...config, slots: newSlots });
+  };
+
+  const addSlot = () => {
+      setConfig({
+          ...config,
+          slots: [...config.slots, { label: `分组 ${config.slots.length + 1}`, prompt: "" }]
+      });
+  };
+
+  const removeSlot = (index: number) => {
+      const newSlots = config.slots.filter((_, i) => i !== index);
+      setConfig({ ...config, slots: newSlots });
+  };
+
   // --- Queue Processor ---
   useEffect(() => {
       const processNext = async () => {
-          if (isProcessing || taskQueue.length === 0) return;
+          // Check Pause state
+          if (isProcessing || taskQueue.length === 0 || isPaused) return;
           
           const task = taskQueue[0];
           setIsProcessing(true);
@@ -307,7 +366,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
               }
 
               // Actual generation Logic
-              const slotPrompt = config.prompts[task.slot] || config.prompts[0];
+              const slot = config.slots[task.slot];
+              if (!slot) throw new Error(`Slot config missing for index ${task.slot}`);
+
+              const slotPrompt = slot.prompt;
               const prompt = `artist:${artist.name}, ${slotPrompt}`;
               const negative = config.negative;
               const seed = config.seed === -1 ? 0 : config.seed;
@@ -321,7 +383,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
               // Fetch FRESH benchmarks from current state to avoid overwrites if multiple tasks ran
               const currentBenchmarks = artist.benchmarks ? [...artist.benchmarks] : (artist.previewUrl ? [artist.previewUrl] : []);
               
-              // Pad array
+              // Pad array if needed
               while(currentBenchmarks.length <= task.slot) currentBenchmarks.push("");
               currentBenchmarks[task.slot] = base64Img;
 
@@ -348,7 +410,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
       };
 
       processNext();
-  }, [taskQueue, isProcessing, apiKey, config, artistsData, onRefresh, notify]);
+  }, [taskQueue, isProcessing, isPaused, apiKey, config, artistsData, onRefresh, notify]);
 
 
   // Add tasks to queue
@@ -415,26 +477,23 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 </button>
             </div>
 
-            {/* Benchmark Sub-Toggles (Only show in benchmark mode) */}
+            {/* Benchmark Sub-Toggles (Dynamic based on slots) */}
             {viewMode === 'benchmark' && (
-                <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto">
-                    {[
-                        { id: 0, label: '1. 面部' },
-                        { id: 1, label: '2. 体态' },
-                        { id: 2, label: '3. 场景' },
-                    ].map(tab => (
+                <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-[200px] md:max-w-[400px]">
+                    {config.slots.map((slot, index) => (
                         <button
-                            key={tab.id}
-                            onClick={() => setActiveSlot(tab.id)}
-                            className={`px-3 py-1 rounded text-xs font-medium transition-all whitespace-nowrap ${activeSlot === tab.id ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
+                            key={index}
+                            onClick={() => setActiveSlot(index)}
+                            className={`px-3 py-1 rounded text-xs font-medium transition-all whitespace-nowrap ${activeSlot === index ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
+                            title={slot.prompt}
                         >
-                            {tab.label}
+                            {index + 1}. {slot.label}
                         </button>
                     ))}
                     <button 
                         onClick={() => setShowConfig(true)}
                         className="px-2 py-1 ml-1 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        title="实装设置"
+                        title="配置分组"
                     >
                         ⚙️
                     </button>
@@ -444,8 +503,23 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
             {/* Settings Group */}
             <div className="flex gap-2 items-center ml-auto">
                 {taskQueue.length > 0 && (
-                    <div className="text-xs font-mono text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">
-                        Queue: {taskQueue.length}
+                    <div className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded border border-indigo-100 dark:border-indigo-800">
+                         <span className="text-xs font-mono text-indigo-600 dark:text-indigo-300">
+                             Queue: {taskQueue.length}
+                         </span>
+                         {/* Pause/Resume Button */}
+                         <button 
+                            onClick={() => setIsPaused(!isPaused)}
+                            className={`w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-black/20 ${isPaused ? 'text-yellow-600 animate-pulse' : 'text-indigo-600'}`}
+                            title={isPaused ? "恢复队列" : "暂停队列"}
+                         >
+                             {isPaused ? (
+                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                             ) : (
+                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                             )}
+                         </button>
+                         {isProcessing && !isPaused && <div className="w-2 h-2 rounded-full bg-green-500 animate-ping"></div>}
                     </div>
                 )}
                 <button 
@@ -548,7 +622,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                              ) : (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
                                     <span className="text-2xl mb-1">🤖</span>
-                                    <span className="text-[10px]">Slot {activeSlot + 1} Empty</span>
+                                    <span className="text-[10px]">No Data</span>
                                 </div>
                              )}
                              
@@ -588,11 +662,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                         </button>
-                                        {/* Generate ALL 3 Slots */}
+                                        {/* Generate ALL Slots */}
                                         <button 
-                                            onClick={(e) => queueGeneration(artist, [0, 1, 2], e)}
+                                            onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
                                             className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto text-green-600 hover:text-green-500"
-                                            title="一键生成 3 组实装图"
+                                            title={`一键生成全部 ${config.slots.length} 组`}
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
                                         </button>
@@ -712,21 +786,39 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                       </div>
 
                       <div className="space-y-4">
-                          {[
-                              { i: 0, label: "测试组 1: 面部 (Face, Hands)" },
-                              { i: 1, label: "测试组 2: 体态 (Torso, Skin)" },
-                              { i: 2, label: "测试组 3: 场景 (Scene, Full Body)" }
-                          ].map(g => (
-                              <div key={g.i}>
-                                  <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1 uppercase">{g.label}</label>
+                          <div className="flex justify-between items-center">
+                              <label className="block text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">测试分组 (Slots)</label>
+                              <button onClick={addSlot} className="text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800">
+                                  + 添加分组
+                              </button>
+                          </div>
+                          
+                          {config.slots.map((slot, i) => (
+                              <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50 relative group/slot">
+                                  <div className="flex justify-between mb-2 gap-2">
+                                      <div className="flex items-center gap-2 flex-1">
+                                          <span className="text-xs font-mono text-gray-400 w-4">{i + 1}.</span>
+                                          <input 
+                                              type="text"
+                                              className="text-xs font-bold bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 outline-none dark:text-white transition-colors w-full"
+                                              value={slot.label}
+                                              onChange={e => updateSlot(i, 'label', e.target.value)}
+                                              placeholder="分组名称"
+                                          />
+                                      </div>
+                                      <button 
+                                          onClick={() => removeSlot(i)}
+                                          className="text-gray-400 hover:text-red-500 text-xs px-2"
+                                          title="删除此分组（注意：删除中间的分组会导致后续实装图错位）"
+                                      >
+                                          删除
+                                      </button>
+                                  </div>
                                   <textarea 
-                                      className="w-full h-20 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
-                                      value={config.prompts[g.i]}
-                                      onChange={e => {
-                                          const newPrompts = [...config.prompts];
-                                          newPrompts[g.i] = e.target.value;
-                                          setConfig({...config, prompts: newPrompts});
-                                      }}
+                                      className="w-full h-16 p-2 bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-600 rounded text-xs dark:text-white font-mono resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
+                                      value={slot.prompt}
+                                      onChange={e => updateSlot(i, 'prompt', e.target.value)}
+                                      placeholder="输入测试 Prompt..."
                                   />
                               </div>
                           ))}
@@ -744,12 +836,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Seed (-1 = Random)</label>
-                              <input 
-                                  type="number" 
-                                  className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
-                                  value={config.seed}
-                                  onChange={e => setConfig({...config, seed: parseInt(e.target.value)})}
-                              />
+                              <div className="flex gap-2">
+                                <input 
+                                    type="number" 
+                                    className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                    value={config.seed}
+                                    onChange={e => setConfig({...config, seed: parseInt(e.target.value)})}
+                                />
+                                <button
+                                    onClick={() => setConfig({...config, seed: Math.floor(Math.random() * 4294967295)})}
+                                    className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center"
+                                    title="随机生成一个固定 Seed"
+                                >
+                                    🎲
+                                </button>
+                              </div>
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Steps / Scale</label>
