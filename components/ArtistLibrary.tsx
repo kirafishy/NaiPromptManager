@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Artist } from '../types';
+import { generateImage } from '../services/naiService'; // Import generation service
+import { api } from '../services/api'; // Import api for updating
 
 interface CartItem {
   name: string;
@@ -31,6 +33,7 @@ const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
     const imgRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        setIsLoaded(false); // Reset load state when src changes
         const observer = new IntersectionObserver((entries) => {
             if (entries[0].isIntersecting) {
                 setIsInView(true);
@@ -40,7 +43,7 @@ const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
 
         if (imgRef.current) observer.observe(imgRef.current);
         return () => observer.disconnect();
-    }, []);
+    }, [src]);
 
     return (
         <div ref={imgRef} className="w-full h-full relative bg-gray-200 dark:bg-gray-900 overflow-hidden">
@@ -54,7 +57,7 @@ const LazyImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
             )}
             {!isLoaded && isInView && (
                 <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                    <span className="animate-pulse">Loading...</span>
+                    <span className="animate-pulse">...</span>
                 </div>
             )}
         </div>
@@ -77,6 +80,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [gachaCount, setGachaCount] = useState(3);
+  
+  // Benchmark / Preview Mode State
+  const [viewMode, setViewMode] = useState<'original' | 'benchmark'>('original');
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+
+  // Check admin via checking if we can get user info or just check if a specific key exists?
+  // Ideally passed via props, but for minimal diff we can infer or use a simple check.
+  // Actually, generation logic requires API Key.
+  const apiKey = localStorage.getItem('nai_api_key');
 
   // Load data via Props (Caching handled in App)
   useEffect(() => {
@@ -228,14 +240,50 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     }
   };
 
+  // --- Benchmark Logic ---
+  const handleGeneratePreview = async (artist: Artist, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!apiKey) {
+        notify('请先在编辑器或登录页填入 API Key', 'error');
+        return;
+    }
+    setGeneratingId(artist.id);
+    try {
+        const prompt = `artist:${artist.name}, 1girl, portrait, simple background, masterpiece, best quality`;
+        const negative = `lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry`;
+        
+        // Generate Image (Small size for preview)
+        const base64Img = await generateImage(apiKey, prompt, negative, {
+            width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: 0,
+            qualityToggle: true, ucPreset: 0
+        });
+
+        // Update DB (Wait for API update)
+        // We use the same endpoint as creating artist, but we just need to update previewUrl
+        // Since we don't have a partial update endpoint easily, we pass everything
+        await api.post('/artists', {
+            id: artist.id,
+            name: artist.name,
+            imageUrl: artist.imageUrl,
+            previewUrl: base64Img // Backend handles upload to R2
+        });
+
+        notify(`已生成 ${artist.name} 的实测图`);
+        await onRefresh();
+    } catch (err: any) {
+        notify('生成失败: ' + err.message, 'error');
+    } finally {
+        setGeneratingId(null);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
       
-      {/* --- Controls Header (Replicated Structure) --- */}
+      {/* --- Controls Header --- */}
       <div className="p-4 bg-white dark:bg-gray-800 shadow-md flex flex-col items-stretch gap-4 z-10 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         
         <div className="flex gap-2 w-full">
-            {/* Refresh Button (Added) */}
             <button 
                 onClick={handleRefresh} 
                 className={`p-2 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0`}
@@ -258,6 +306,22 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         </div>
 
         <div className="flex justify-between items-center flex-wrap gap-2">
+            {/* View Toggle */}
+            <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                <button
+                    onClick={() => setViewMode('original')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'original' ? 'bg-white dark:bg-gray-700 shadow text-indigo-600 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                >
+                    原图
+                </button>
+                <button
+                    onClick={() => setViewMode('benchmark')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-all flex items-center gap-1 ${viewMode === 'benchmark' ? 'bg-white dark:bg-gray-700 shadow text-indigo-600 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                >
+                    实装 <span className="text-[10px] opacity-60">Beta</span>
+                </button>
+            </div>
+
             {/* Settings Group */}
             <div className="flex gap-2 items-center">
                 <button 
@@ -287,16 +351,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
                 </button>
-                
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 dark:text-gray-400 select-none ml-2">
-                    <input 
-                        type="checkbox" 
-                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
-                        checked={usePrefix} 
-                        onChange={(e) => {setUsePrefix(e.target.checked); localStorage.setItem('nai_use_prefix', String(e.target.checked))}} 
-                    />
-                    <span className="text-xs">前缀</span>
-                </label>
             </div>
 
             {/* Gacha Box */}
@@ -350,6 +404,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                  const currChar = getGroupChar(artist.name);
                  const isAnchor = currChar !== prevChar;
                  
+                 // Display Image Selection
+                 const displayImg = (viewMode === 'benchmark' && artist.previewUrl) ? artist.previewUrl : artist.imageUrl;
+                 const isBenchmarkMissing = viewMode === 'benchmark' && !artist.previewUrl;
+                 
                  return (
                      <div 
                         key={artist.id} 
@@ -357,9 +415,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         className={`group relative bg-white dark:bg-gray-800 rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:shadow-lg ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500'}`}
                         onClick={() => toggleCart(artist.name)}
                      >
-                         <div className="aspect-square relative overflow-hidden">
+                         <div className="aspect-square relative overflow-hidden bg-gray-200 dark:bg-gray-900">
                              {/* Use Custom Lazy Image */}
-                             <LazyImage src={artist.imageUrl} alt={artist.name} />
+                             {!isBenchmarkMissing ? (
+                                <LazyImage src={displayImg} alt={artist.name} />
+                             ) : (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                                    <span className="text-2xl mb-1">🤖</span>
+                                    <span className="text-[10px]">未实装</span>
+                                </div>
+                             )}
                              
                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
                              
@@ -371,9 +436,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                  <a href={`https://danbooru.donmai.us/posts?tags=${artist.name}`} target="_blank" rel="noreferrer" className="hidden md:block p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-blue-500 dark:text-blue-300 hover:text-blue-600 pointer-events-auto">
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                  </a>
-                                 <button onClick={(e) => {e.stopPropagation(); setLightboxImg({src: artist.imageUrl, name: artist.name})}} className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-gray-700 dark:text-white pointer-events-auto">
+                                 <button onClick={(e) => {e.stopPropagation(); setLightboxImg({src: displayImg, name: artist.name})}} className="p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm text-gray-700 dark:text-white pointer-events-auto">
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                                  </button>
+
+                                 {/* Admin Benchmark Generation Button */}
+                                 {viewMode === 'benchmark' && apiKey && (
+                                     <button 
+                                        onClick={(e) => handleGeneratePreview(artist, e)}
+                                        disabled={generatingId === artist.id}
+                                        className={`p-1.5 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur border border-gray-200 dark:border-white/20 shadow-sm pointer-events-auto ${generatingId === artist.id ? 'animate-spin text-gray-400' : 'text-purple-600 hover:text-purple-500'}`}
+                                        title="生成实装图"
+                                     >
+                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                     </button>
+                                 )}
                              </div>
 
                              {isSelected && (

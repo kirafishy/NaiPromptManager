@@ -25,9 +25,10 @@ const RESOLUTIONS = {
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, onUpdateChain, onBack, onFork, setIsDirty, notify }) => {
   // Permission Check
-  // Guests are strictly viewers but allowed to try generation.
+  // Guests are allowed to EDIT (in memory) for testing, but NOT SAVE.
   const isGuest = currentUser.role === 'guest';
   const isOwner = !isGuest && (chain.userId === currentUser.id || currentUser.role === 'admin');
+  const canEdit = isOwner || isGuest; // Both can interact with inputs now
 
   // --- Chain Info State ---
   const [chainName, setChainName] = useState(chain.name);
@@ -46,10 +47,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const [hasChanges, setHasChanges] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
-  // Sync dirty state with parent
+  // Sync dirty state with parent (ONLY IF NOT GUEST)
   useEffect(() => {
-    setIsDirty(hasChanges);
-  }, [hasChanges, setIsDirty]);
+    if (!isGuest) {
+        setIsDirty(hasChanges);
+    }
+  }, [hasChanges, setIsDirty, isGuest]);
 
   // --- Testing State ---
   const [activeModules, setActiveModules] = useState<Record<string, boolean>>({});
@@ -96,7 +99,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     const savedKey = localStorage.getItem('nai_api_key');
     if (savedKey) setApiKey(savedKey);
 
-  }, [chain, isGuest]);
+  }, [chain]); // Remove isGuest from dependency to avoid reset loops
 
   // --- Logic: Compilation ---
   useEffect(() => {
@@ -124,17 +127,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
       return `NAI-${timestamp}.png`;
   };
 
+  // Helper to mark changes only if owner
+  const markChange = () => {
+      if (isOwner) setHasChanges(true);
+  };
+
   // --- Handlers: Prompt Editing ---
   const handleModuleChange = (index: number, key: keyof PromptModule, value: any) => {
-    if (!isOwner) return;
+    if (!canEdit) return;
     const newModules = [...modules];
     newModules[index] = { ...newModules[index], [key]: value };
     setModules(newModules);
-    setHasChanges(true);
+    markChange();
   };
 
   const addModule = () => {
-    if (!isOwner) return;
+    if (!canEdit) return;
     const newModule: PromptModule = {
       id: crypto.randomUUID(),
       name: '新模块',
@@ -144,24 +152,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
     };
     setModules([...modules, newModule]);
     setActiveModules(prev => ({ ...prev, [newModule.id]: true }));
-    setHasChanges(true);
+    markChange();
   };
 
   const removeModule = (index: number) => {
-    if (!isOwner) return;
+    if (!canEdit) return;
     const newModules = [...modules];
     newModules.splice(index, 1);
     setModules(newModules);
-    setHasChanges(true);
+    markChange();
   };
 
   const handleResolutionChange = (mode: string) => {
-    if (!isOwner && mode !== 'Custom') return;
-    if (isOwner) {
+    if (!canEdit && mode !== 'Custom') return;
+    if (canEdit) {
         if (mode === 'Custom') return;
         const res = RESOLUTIONS[mode as keyof typeof RESOLUTIONS];
         setParams({ ...params, width: res.width, height: res.height });
-        setHasChanges(true);
+        markChange();
     }
   };
 
@@ -176,31 +184,31 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
 
   // --- Character Handlers ---
   const addCharacter = () => {
-      if (!isOwner) return;
+      if (!canEdit) return;
       const newChar: CharacterParams = { id: crypto.randomUUID(), prompt: "character description", x: 0.5, y: 0.5 };
       setParams({ ...params, characters: [...(params.characters || []), newChar] });
-      setHasChanges(true);
+      markChange();
   };
 
   const updateCharacter = (idx: number, updates: Partial<CharacterParams>) => {
-      if (!isOwner || !params.characters) return;
+      if (!canEdit || !params.characters) return;
       const newChars = [...params.characters];
       newChars[idx] = { ...newChars[idx], ...updates };
       setParams({ ...params, characters: newChars });
-      setHasChanges(true);
+      markChange();
   };
 
   const removeCharacter = (idx: number) => {
-      if (!isOwner || !params.characters) return;
+      if (!canEdit || !params.characters) return;
       const newChars = [...params.characters];
       newChars.splice(idx, 1);
       setParams({ ...params, characters: newChars });
-      setHasChanges(true);
+      markChange();
   };
 
   // --- Import Logic ---
   const handleImportImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!isOwner) return;
+      if (!canEdit) return;
       const file = e.target.files?.[0];
       if (!file) return;
 
@@ -308,7 +316,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
           setBasePrompt(prompt);
           setNegativePrompt(negative);
           setParams(newParams);
-          setHasChanges(true);
+          markChange();
           notify('参数已导入 (包含 V4 设置)');
       } catch (e: any) {
           notify('解析失败: ' + e.message, 'error');
@@ -362,7 +370,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
   const toggleModuleActive = (id: string) => {
     setActiveModules(prev => {
         const newState = { ...prev, [id]: !prev[id] };
-        if (isOwner) setHasChanges(true);
+        markChange();
         return newState;
     });
   };
@@ -453,9 +461,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
           
           {isEditingInfo && isOwner ? (
               <div className="flex flex-col md:flex-row gap-2 flex-1 w-full max-w-2xl min-w-0">
-                  <input type="text" value={chainName} onChange={e => {setChainName(e.target.value); setHasChanges(true)}} className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold min-w-0" placeholder="名称" />
+                  <input type="text" value={chainName} onChange={e => {setChainName(e.target.value); markChange()}} className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-900 dark:text-white text-sm focus:border-indigo-500 outline-none font-bold min-w-0" placeholder="名称" />
                   <div className="flex gap-2">
-                    <input type="text" value={chainDesc} onChange={e => {setChainDesc(e.target.value); setHasChanges(true)}} className="flex-1 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm focus:border-indigo-500 outline-none min-w-0" placeholder="描述" />
+                    <input type="text" value={chainDesc} onChange={e => {setChainDesc(e.target.value); markChange()}} className="flex-1 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-gray-700 dark:text-gray-300 text-sm focus:border-indigo-500 outline-none min-w-0" placeholder="描述" />
                     <button 
                         onClick={() => setIsEditingInfo(false)} 
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium flex-shrink-0 whitespace-nowrap"
@@ -523,7 +531,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   {!isOwner && (
                       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
                           {isGuest 
-                            ? '您正在以游客身份浏览，无法保存修改。请在右上角填入 API Key 进行生图测试。'
+                            ? '您正在以游客身份浏览。您可以自由修改 Prompt 进行测试，但无法保存更改。'
                             : '您正在查看他人的画师串，无法直接修改。您可以调整参数进行测试，或点击右上角“Fork”保存到您的列表。'
                           }
                       </div>
@@ -534,7 +542,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                     <div className="flex justify-between items-end mb-2">
                         <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">1. 基础场景/背景 (Base)</label>
                         {/* Import Button */}
-                        {isOwner && (
+                        {canEdit && (
                             <div>
                                 <input 
                                     type="file" 
@@ -554,11 +562,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                         )}
                     </div>
                     <textarea
-                      disabled={!isOwner}
-                      className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!isOwner ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
+                      disabled={!canEdit}
+                      className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
                       value={basePrompt}
                       placeholder="e.g. outdoors, sky, clouds, masterpiece, best quality"
-                      onChange={(e) => {setBasePrompt(e.target.value); setHasChanges(true)}}
+                      onChange={(e) => {setBasePrompt(e.target.value); markChange()}}
                     />
                   </section>
 
@@ -566,7 +574,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   <section>
                     <div className="flex justify-between items-center mb-3">
                         <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">2. 风格模块 (Modules)</label>
-                        {isOwner && (
+                        {canEdit && (
                             <button onClick={addModule} className="text-xs flex items-center bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded hover:bg-gray-300 dark:hover:bg-gray-700">
                                 添加
                             </button>
@@ -579,7 +587,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                     <input type="checkbox" checked={activeModules[mod.id] !== false} onChange={() => toggleModuleActive(mod.id)} className="rounded bg-gray-100 dark:bg-gray-900 text-indigo-600 focus:ring-0 flex-shrink-0" />
                                     <input 
                                         type="text"
-                                        disabled={!isOwner}
+                                        disabled={!canEdit}
                                         className="bg-transparent border-b border-transparent focus:border-indigo-500 text-indigo-600 dark:text-indigo-300 font-medium text-sm outline-none px-1 flex-1 min-w-[120px]"
                                         value={mod.name}
                                         onChange={(e) => handleModuleChange(idx, 'name', e.target.value)}
@@ -587,28 +595,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                     <div className="flex bg-gray-200 dark:bg-gray-700 rounded p-0.5 ml-auto flex-shrink-0">
                                         <button 
                                             onClick={() => handleModuleChange(idx, 'position', 'pre')}
-                                            disabled={!isOwner}
+                                            disabled={!canEdit}
                                             className={`px-2 py-0.5 text-[10px] rounded transition-colors ${mod.position === 'pre' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-indigo-300 font-bold' : 'text-gray-500'}`}
                                         >
                                             前置
                                         </button>
                                         <button 
                                             onClick={() => handleModuleChange(idx, 'position', 'post')}
-                                            disabled={!isOwner}
+                                            disabled={!canEdit}
                                             className={`px-2 py-0.5 text-[10px] rounded transition-colors ${(mod.position === 'post' || !mod.position) ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-indigo-300 font-bold' : 'text-gray-500'}`}
                                         >
                                             后置
                                         </button>
                                     </div>
-                                    {isOwner && (
+                                    {canEdit && (
                                         <button onClick={() => removeModule(idx)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                         </button>
                                     )}
                                 </div>
                                 <textarea
-                                    disabled={!isOwner}
-                                    className={`w-full rounded p-2 outline-none font-mono text-xs h-16 resize-none ${!isOwner ? 'bg-transparent text-gray-500' : 'bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-700/30 text-gray-800 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500/50'}`}
+                                    disabled={!canEdit}
+                                    className={`w-full rounded p-2 outline-none font-mono text-xs h-16 resize-none ${!canEdit ? 'bg-transparent text-gray-500' : 'bg-white dark:bg-gray-900/50 border border-gray-300 dark:border-gray-700/30 text-gray-800 dark:text-gray-300 focus:ring-1 focus:ring-indigo-500/50'}`}
                                     value={mod.content}
                                     onChange={(e) => handleModuleChange(idx, 'content', e.target.value)}
                                 />
@@ -621,7 +629,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   <section className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800/50">
                       <div className="flex justify-between items-center mb-3">
                           <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理 (V4.5 Characters)</label>
-                          {isOwner && (
+                          {canEdit && (
                               <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
                                   + 添加角色
                               </button>
@@ -638,7 +646,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                       <div className="flex-1">
                                           <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Prompt</label>
                                           <textarea 
-                                              disabled={!isOwner}
+                                              disabled={!canEdit}
                                               value={char.prompt}
                                               onChange={(e) => updateCharacter(idx, { prompt: e.target.value })}
                                               className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
@@ -650,7 +658,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center X</label>
                                               <input 
                                                   type="number" step="0.1" min="0" max="1"
-                                                  disabled={!isOwner}
+                                                  disabled={!canEdit}
                                                   value={char.x}
                                                   onChange={(e) => updateCharacter(idx, { x: parseFloat(e.target.value) })}
                                                   className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
@@ -660,14 +668,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center Y</label>
                                               <input 
                                                   type="number" step="0.1" min="0" max="1"
-                                                  disabled={!isOwner}
+                                                  disabled={!canEdit}
                                                   value={char.y}
                                                   onChange={(e) => updateCharacter(idx, { y: parseFloat(e.target.value) })}
                                                   className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                                               />
                                           </div>
                                       </div>
-                                      {isOwner && (
+                                      {canEdit && (
                                           <button onClick={() => removeCharacter(idx)} className="text-gray-400 hover:text-red-500 mt-6">
                                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                           </button>
@@ -682,10 +690,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   <section>
                     <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">负面 Prompt</label>
                     <textarea
-                      disabled={!isOwner}
-                      className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!isOwner ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
+                      disabled={!canEdit}
+                      className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}
                       value={negativePrompt}
-                      onChange={(e) => {setNegativePrompt(e.target.value); setHasChanges(true)}}
+                      onChange={(e) => {setNegativePrompt(e.target.value); markChange()}}
                     />
                   </section>
 
@@ -699,11 +707,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                              <input 
                                 type="checkbox" 
                                 id="qualityToggle"
-                                disabled={!isOwner}
+                                disabled={!canEdit}
                                 checked={params.qualityToggle ?? true}
                                 onChange={(e) => {
                                     setParams({ ...params, qualityToggle: e.target.checked });
-                                    if(isOwner) setHasChanges(true);
+                                    markChange();
                                 }}
                                 className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
                              />
@@ -714,12 +722,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                          <div>
                              <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">负面预设 (UC Preset)</label>
                              <select 
-                                disabled={!isOwner}
+                                disabled={!canEdit}
                                 className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm"
                                 value={params.ucPreset ?? 0}
                                 onChange={(e) => {
                                     setParams({ ...params, ucPreset: parseInt(e.target.value) });
-                                    if(isOwner) setHasChanges(true);
+                                    markChange();
                                 }}
                              >
                                  <option value={0}>Heavy (Default)</option>
@@ -733,7 +741,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                          <div>
                              <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">图片尺寸</label>
                              <select 
-                                  disabled={!isOwner}
+                                  disabled={!canEdit}
                                   className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm"
                                   value={getCurrentResolutionMode()}
                                   onChange={(e) => handleResolutionChange(e.target.value)}
@@ -752,7 +760,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                     onChange={(e) => {
                                         const val = Math.min(28, parseInt(e.target.value) || 0);
                                         setParams({...params, steps: val}); 
-                                        if(isOwner) setHasChanges(true);
+                                        markChange();
                                     }}
                                  />
                              </div>
@@ -760,7 +768,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                  <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Scale</label>
                                  <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm" 
                                     value={params.scale} 
-                                    onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); if(isOwner) setHasChanges(true);}}
+                                    onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); markChange();}}
                                  />
                              </div>
                              {/* Seed Input */}
@@ -773,7 +781,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                                     onChange={(e) => {
                                         const val = parseInt(e.target.value);
                                         setParams({...params, seed: isNaN(val) ? 0 : val}); 
-                                        if(isOwner) setHasChanges(true);
+                                        markChange();
                                     }}
                                  />
                              </div>
@@ -782,7 +790,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                   </section>
               </div>
 
-              {/* Sticky Footer for Save Actions */}
+              {/* Sticky Footer for Save Actions - ONLY FOR OWNER */}
               {isOwner && (
                 <div className="fixed bottom-16 left-0 right-0 md:absolute md:bottom-0 p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transform transition-transform duration-300 z-10">
                     <div className="text-xs text-gray-500 ml-2">
@@ -816,7 +824,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, currentUser, on
                           value={subjectPrompt}
                           onChange={(e) => {
                              setSubjectPrompt(e.target.value);
-                             if (isOwner) setHasChanges(true); // Treat subject input as part of the saved chain now
+                             markChange();
                           }}
                       />
                   </div>

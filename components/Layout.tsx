@@ -57,6 +57,25 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           </div>
       )}
 
+      {/* Mobile Top Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-40">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm shadow-md">N</div>
+            <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">NAI Manager</span>
+          </div>
+          {currentUser && (
+            <div className="flex items-center gap-2">
+                 <div className="flex flex-col items-end">
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 max-w-[100px] truncate">{currentUser.username}</span>
+                    <span className="text-[10px] text-gray-400 uppercase">{currentUser.role}</span>
+                 </div>
+                 <div className="w-8 h-8 rounded bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-400 border border-gray-200 dark:border-gray-700">
+                     {currentUser.username[0].toUpperCase()}
+                 </div>
+            </div>
+          )}
+      </div>
+
       {/* Desktop Sidebar (Hidden on Mobile) */}
       <aside className="hidden md:flex w-20 md:w-64 flex-shrink-0 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex-col transition-colors duration-300">
         <div className="p-4 md:p-6 flex items-center justify-center md:justify-start space-x-3 border-b border-gray-200 dark:border-gray-800">
@@ -127,8 +146,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 pb-16 md:pb-0">
+      {/* Main Content (Added pt-14 for mobile header) */}
+      <main className="flex-1 overflow-hidden flex flex-col relative bg-white dark:bg-gray-900 transition-colors duration-300 pb-16 md:pb-0 pt-14 md:pt-0">
         {children}
       </main>
 

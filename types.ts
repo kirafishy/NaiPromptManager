@@ -66,7 +66,8 @@ export interface PromptChain {
 export interface Artist {
   id: string;
   name: string;
-  imageUrl: string; // Now supports Base64 Data URI
+  imageUrl: string; // Original (Danbooru) image
+  previewUrl?: string; // New: AI Generated Benchmark image
 }
 
 // Inspiration Gallery Types

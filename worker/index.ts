@@ -244,6 +244,9 @@ export default {
       // Migration for variable_values
       try { await db.prepare("ALTER TABLE chains ADD COLUMN variable_values TEXT DEFAULT '{}'").run(); } catch (e) {}
 
+      // NEW: Migration for Artist Benchmark Preview
+      try { await db.prepare("ALTER TABLE artists ADD COLUMN preview_url TEXT").run(); } catch (e) {}
+
       // Create Default Admin if not exists
       try {
         const admin = await db.prepare('SELECT * FROM users WHERE username = ?').bind('admin').first();
@@ -254,7 +257,7 @@ export default {
         }
       } catch (e) { console.error('Admin init failed', e) }
 
-      // Create Default Guest User (Replaced UPSERT with explicitly check)
+      // Create Default Guest User
       try {
         const guestName = 'guest';
         // Explicitly check for user by username
@@ -338,11 +341,10 @@ export default {
           });
       }
 
-      // Login (UPDATED: Hash Support & Lazy Migration)
+      // Login
       if (path === '/api/auth/login' && method === 'POST') {
           const { username, password } = await request.json() as any;
           
-          // Lazy Init Check for table existence
           try { await db.prepare('SELECT 1 FROM users').first(); } catch(e) { await initDB(); }
 
           const user = await db.prepare('SELECT * FROM users WHERE username = ?')
@@ -411,7 +413,6 @@ export default {
       if (path === '/api/admin/guest-setting' && method === 'GET') {
           if (currentUser.role !== 'admin') return error('Forbidden', 403);
           
-          // Lazy init to ensure guest user exists if Admin checks settings first
           let guest = await db.prepare('SELECT password FROM users WHERE role = ?').bind('guest').first<{password: string}>();
           if (!guest) {
              await initDB();
@@ -427,7 +428,6 @@ export default {
           const { passcode } = await request.json() as any;
           if (!passcode) return error('Missing passcode', 400);
           
-          // Ensure guest exists before update
           let guest = await db.prepare('SELECT 1 FROM users WHERE role = ?').bind('guest').first();
           if (!guest) await initDB();
 
@@ -435,7 +435,7 @@ export default {
           return json({ success: true });
       }
 
-      // --- NAI Proxy (With Guest Guard Removed) ---
+      // --- NAI Proxy ---
       if (path === '/api/generate' && method === 'POST') {
         const body = await request.json();
         const clientAuth = request.headers.get('Authorization'); 
@@ -452,7 +452,7 @@ export default {
         return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
       }
 
-      // --- NEW: Binary Upload Endpoint (Multipart with Streaming) ---
+      // --- Upload Endpoint ---
       if (path === '/api/upload' && method === 'POST') {
           if (!env.BUCKET) return error('R2 Bucket not configured', 503);
           
@@ -471,11 +471,8 @@ export default {
           const folder = formData.get('folder') as string || 'misc';
           const ext = file.name.split('.').pop() || 'png';
           const filename = `${folder}/${currentUser.id}_${Date.now()}.${ext}`;
-          const fileSize = file.size; // Use size from metadata, no arrayBuffer needed yet
+          const fileSize = file.size;
 
-          // 1. DB Check (Quota)
-          // We rely on currentUser.storage_usage which was fetched at start of request.
-          // This avoids an extra DB call here.
           const startDbCheck = performance.now();
           if (currentUser.role !== 'admin') {
               const currentUsage = currentUser.storage_usage || 0;
@@ -485,15 +482,12 @@ export default {
           }
           timings.push(`db_check;dur=${(performance.now() - startDbCheck).toFixed(2)}`);
 
-          // 2. R2 Put (Streaming)
-          // Using file.stream() pipes the data directly to R2 without buffering the whole file in worker memory
           const startR2 = performance.now();
           await env.BUCKET.put(filename, file.stream(), {
               httpMetadata: { contentType: file.type }
           });
           timings.push(`r2_put;dur=${(performance.now() - startR2).toFixed(2)}`);
 
-          // 3. DB Update (Usage)
           const startDbUp = performance.now();
           await db.prepare('UPDATE users SET storage_usage = COALESCE(storage_usage, 0) + ? WHERE id = ?')
               .bind(fileSize, currentUser.id).run();
@@ -659,19 +653,47 @@ export default {
          return json(res.results.map((a: any) => ({
              id: a.id,
              name: a.name,
-             imageUrl: a.image_url
+             imageUrl: a.image_url,
+             previewUrl: a.preview_url // Return benchmark image
          })));
       }
       if (path === '/api/artists' && method === 'POST') {
         if (currentUser.role !== 'admin') return error('Forbidden', 403);
         const body = await request.json() as any;
-        
-        if (body.imageUrl && body.imageUrl.startsWith('data:')) {
-             body.imageUrl = await processImageUpload(env, body.imageUrl, 'artists', body.id || crypto.randomUUID());
+        const id = body.id || crypto.randomUUID();
+
+        // Handle Image Uploads
+        let imageUrl = body.imageUrl;
+        let previewUrl = body.previewUrl;
+
+        if (imageUrl && imageUrl.startsWith('data:')) {
+             imageUrl = await processImageUpload(env, imageUrl, 'artists', id);
+        }
+        if (previewUrl && previewUrl.startsWith('data:')) {
+             previewUrl = await processImageUpload(env, previewUrl, 'artists/benchmarks', id);
         }
 
-        await db.prepare('INSERT OR REPLACE INTO artists (id, name, image_url) VALUES (?, ?, ?)').bind(body.id, body.name, body.imageUrl).run();
-        return json({ success: true });
+        // Updated Query to support preview_url
+        // Using INSERT OR REPLACE allows partial updates to overwrite logic which is tricky if we want to update ONLY preview_url
+        // So we check if body has all fields, or assume it's a full update/insert.
+        // For partial updates, strictly speaking we should use UPDATE or COALESCE in SQL.
+        // Since the UI usually sends full object, we use COALESCE for optional fields if they are missing in payload but exist in DB?
+        // Simpler approach: INSERT OR REPLACE requires all columns.
+        
+        // We fetch existing to preserve values if not provided? 
+        // Or we rely on the frontend sending the complete Artist object.
+        // Let's assume frontend sends full object or we use COALESCE in SQL.
+        
+        await db.prepare(`
+            INSERT INTO artists (id, name, image_url, preview_url) 
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                image_url = excluded.image_url,
+                preview_url = excluded.preview_url
+        `).bind(id, body.name, imageUrl, previewUrl).run();
+
+        return json({ success: true, previewUrl });
       }
       if (path.startsWith('/api/artists/') && method === 'DELETE') {
         if (currentUser.role !== 'admin') return error('Forbidden', 403);
