@@ -90,10 +90,10 @@ const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
         },
         { 
             label: "场景", 
-            prompt: "masterpiece, best quality, 1girl, solo,\nfull body, wide shot, walking, looking back,\nfantasy clothes, cape, armor, holding sword,\nwind, hair blowing, petals,\nruins, forest, overgrown, detailed background, depth of field,\ndappled sunlight, atmospheric, intricate details," 
+            prompt: "masterpiece, best quality, 1girl, solo,\nfull body, walking, looking back,\nfantasy clothes, cape, armor, holding sword,\nwind, hair blowing, petals,\nruins, forest, overgrown, detailed background, depth of field,\ndappled sunlight, atmospheric, intricate details," 
         }
     ],
-    negative: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name,",
+    negative: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, censorbar, mosaic, censoring, bar censor, convenient censoring, bad anatomy, bad hands, text, error, missing fingers, crop,",
     seed: -1, // Random
     steps: 28,
     scale: 6
@@ -479,25 +479,28 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
             {/* Benchmark Sub-Toggles (Dynamic based on slots) */}
             {viewMode === 'benchmark' && (
-                <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-[200px] md:max-w-[400px]">
-                    {config.slots.map((slot, index) => (
-                        <button
-                            key={index}
-                            onClick={() => setActiveSlot(index)}
-                            className={`px-3 py-1 rounded text-xs font-medium transition-all whitespace-nowrap ${activeSlot === index ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
-                            title={slot.prompt}
-                        >
-                            {index + 1}. {slot.label}
-                        </button>
-                    ))}
+                <>
                     <button 
                         onClick={() => setShowConfig(true)}
-                        className="px-2 py-1 ml-1 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex-shrink-0"
                         title="配置分组"
                     >
                         ⚙️
                     </button>
-                </div>
+                    {/* Changed: Flexible width container for slots */}
+                    <div className="flex bg-gray-100 dark:bg-gray-900 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-[200px] md:max-w-none md:flex-wrap md:overflow-visible">
+                        {config.slots.map((slot, index) => (
+                            <button
+                                key={index}
+                                onClick={() => setActiveSlot(index)}
+                                className={`px-3 py-1 rounded text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 mb-0 md:mb-1 last:mb-0 ${activeSlot === index ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                                title={slot.prompt}
+                            >
+                                {index + 1}. {slot.label}
+                            </button>
+                        ))}
+                    </div>
+                </>
             )}
 
             {/* Settings Group */}
