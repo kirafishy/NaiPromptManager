@@ -40,6 +40,11 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
   const [isUpdatingGuest, setIsUpdatingGuest] = useState(false);
   const [showGuestCode, setShowGuestCode] = useState(false); // Visibility toggle
 
+  // Import State
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importLog, setImportLog] = useState<string[]>([]);
+
   // Profile State
   const [myNewPassword, setMyNewPassword] = useState('');
 
@@ -160,6 +165,62 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       }
   };
 
+  // --- GitHub Import Logic ---
+  const handleGithubImport = async () => {
+      if (!confirm('这将从 twoearcat/nai-artists 仓库抓取所有图片并导入数据库。\n过程可能较慢，请勿关闭页面。')) return;
+      
+      setIsImporting(true);
+      setImportProgress(0);
+      setImportLog(['Fetching file list from GitHub API...']);
+
+      try {
+          // 1. Fetch File List from GitHub API
+          const repoApi = "https://api.github.com/repos/twoearcat/nai-artists/contents/images";
+          const res = await fetch(repoApi);
+          if (!res.ok) throw new Error('GitHub API Limit or Network Error');
+          
+          const files = await res.json();
+          const imageFiles = Array.isArray(files) ? files.filter((f: any) => f.name.match(/\.(png|jpg|jpeg)$/i)) : [];
+          
+          if (imageFiles.length === 0) {
+              setImportLog(prev => [...prev, 'No images found in repository.']);
+              setIsImporting(false);
+              return;
+          }
+
+          setImportLog(prev => [...prev, `Found ${imageFiles.length} images. Starting import...`]);
+          
+          // 2. Process Loop
+          let successCount = 0;
+          for (let i = 0; i < imageFiles.length; i++) {
+              const file = imageFiles[i];
+              const rawUrl = file.download_url; // API provides direct download link
+              // Name: Remove extension and underscores
+              const name = file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+              
+              try {
+                  // Call Backend to Fetch & Save
+                  await db.importArtistFromGithub(name, rawUrl);
+                  successCount++;
+                  // Update log every 5 items to reduce render spam
+                  if (i % 5 === 0) setImportLog(prev => [`[${i + 1}/${imageFiles.length}] Imported: ${name}`, ...prev.slice(0, 10)]);
+              } catch (err: any) {
+                  setImportLog(prev => [`[ERROR] Failed: ${name} - ${err.message}`, ...prev]);
+              }
+
+              setImportProgress(Math.round(((i + 1) / imageFiles.length) * 100));
+          }
+
+          setImportLog(prev => [`Done! Successfully imported ${successCount} artists.`, ...prev]);
+          await onRefreshArtists();
+
+      } catch (e: any) {
+          setImportLog(prev => [`FATAL ERROR: ${e.message}`, ...prev]);
+      } finally {
+          setIsImporting(false);
+      }
+  };
+
   return (
     <div className="flex-1 bg-gray-50 dark:bg-gray-900 p-8 overflow-y-auto relative">
       <div className="max-w-6xl mx-auto">
@@ -189,6 +250,31 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
         {/* --- ARTIST TAB --- */}
         {activeTab === 'artist' && isAdmin && (
             <>
+                {/* Import Block */}
+                <div className="mb-6 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-bold text-indigo-800 dark:text-indigo-300 text-sm">快速导入</h3>
+                    </div>
+                    {isImporting ? (
+                        <div className="space-y-2">
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
+                                <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${importProgress}%` }}></div>
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 font-mono h-20 overflow-y-auto bg-white dark:bg-black/20 p-2 rounded">
+                                {importLog.map((l, i) => <div key={i}>{l}</div>)}
+                            </div>
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={handleGithubImport}
+                            className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-4 py-2 rounded text-sm font-medium hover:opacity-90 flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                            一键从 GitHub 导入 (twoearcat/nai-artists)
+                        </button>
+                    )}
+                </div>
+
                 {/* Sticky Header Container */}
                 <div className="sticky top-0 z-20 bg-gray-50 dark:bg-gray-900 pb-4 pt-2 -mt-2">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">

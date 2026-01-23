@@ -24,6 +24,16 @@ class DBService {
       await api.put('/users/password', { password });
   }
 
+  // --- Global Settings (Config) ---
+  async getBenchmarkConfig(): Promise<any> {
+      const res = await api.get('/config/benchmarks');
+      return res.config;
+  }
+
+  async saveBenchmarkConfig(config: any): Promise<void> {
+      await api.put('/config/benchmarks', { config });
+  }
+
   // --- Users (Admin) ---
   async createUser(username: string, password: string): Promise<void> {
       await api.post('/users', { username, password });
@@ -37,7 +47,7 @@ class DBService {
       await api.delete(`/users/${id}`);
   }
 
-  // --- Admin: Guest Settings ---
+  // --- Admin: Guest Settings & Import ---
   async getGuestCode(): Promise<string> {
       const res = await api.get('/admin/guest-setting');
       return res.passcode;
@@ -45,6 +55,10 @@ class DBService {
 
   async updateGuestCode(passcode: string): Promise<void> {
       await api.put('/admin/guest-setting', { passcode });
+  }
+
+  async importArtistFromGithub(name: string, url: string): Promise<void> {
+      await api.post('/admin/import-github', { name, url });
   }
 
   // --- Chains ---

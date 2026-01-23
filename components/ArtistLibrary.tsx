@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Artist } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
 import { api } from '../services/api'; // Import api for updating
+import { db } from '../services/dbService'; // Import DB to fetch config
 
 interface CartItem {
   name: string;
@@ -131,6 +132,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
   
   // Layout State
   const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
+  // Grid Size Slider (px) - Default to ~160px (mobile friendly min)
+  const [minGridSize, setMinGridSize] = useState(160);
 
   // Benchmark / Preview Mode State
   const [viewMode, setViewMode] = useState<'original' | 'benchmark'>('original');
@@ -168,27 +171,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const savedHistory = localStorage.getItem('nai_copy_history');
     if (savedHistory) setHistory(JSON.parse(savedHistory));
 
-    const savedConfig = localStorage.getItem('nai_benchmark_config');
-    if (savedConfig) {
-        try {
-            const parsed = JSON.parse(savedConfig);
-            // Migration Logic: Convert old 'prompts' array to 'slots'
-            if (parsed.prompts && Array.isArray(parsed.prompts) && !parsed.slots) {
-                parsed.slots = parsed.prompts.map((p: string, i: number) => ({
-                    label: i === 0 ? '面部' : i === 1 ? '体态' : i === 2 ? '场景' : `分组 ${i+1}`,
-                    prompt: p
-                }));
-                delete parsed.prompts;
-            }
-            // Ensure default slots if empty (prevent crash)
-            if (!parsed.slots || parsed.slots.length === 0) {
-                parsed.slots = DEFAULT_BENCHMARK_CONFIG.slots;
-            }
-            setConfig(parsed);
-        } catch(e) {
-            console.error("Config parse error", e);
+    // Load Config from Server (Public)
+    db.getBenchmarkConfig().then(cfg => {
+        if (cfg) setConfig(cfg);
+    }).catch(err => {
+        console.error("Failed to load benchmark config from server", err);
+        // Fallback to local storage if server fails (backward compat)
+        const savedConfig = localStorage.getItem('nai_benchmark_config');
+        if (savedConfig) {
+            try {
+                const parsed = JSON.parse(savedConfig);
+                if (!parsed.slots || parsed.slots.length === 0) parsed.slots = DEFAULT_BENCHMARK_CONFIG.slots;
+                setConfig(parsed);
+            } catch(e) {}
         }
-    }
+    });
 
     const savedKey = localStorage.getItem('nai_api_key');
     if (savedKey) setApiKey(savedKey);
@@ -253,11 +250,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     notify('组合串已复制！');
   };
 
-  const filteredArtists = (artistsData || []).filter(a => {
-    if (showFavOnly && !favorites.has(a.name)) return false;
-    if (searchTerm) return a.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return true;
-  });
+  // MEMOIZED Filtered Artists to prevent stutter during layout changes
+  const filteredArtists = useMemo(() => {
+      return (artistsData || []).filter(a => {
+        if (showFavOnly && !favorites.has(a.name)) return false;
+        if (searchTerm) return a.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return true;
+      });
+  }, [artistsData, showFavOnly, favorites, searchTerm]);
 
   // --- New Features Logic ---
   
@@ -344,15 +344,23 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
       setShowConfig(true);
   };
 
-  const saveConfig = () => {
+  const saveConfig = async () => {
       // Basic validation
       if (draftConfig.slots.length === 0) {
           notify('至少需要一个测试分组', 'error');
           return;
       }
-      // Apply Draft to Real Config
+      // Apply Draft to Real Config & Save to Server
       setConfig(draftConfig);
-      localStorage.setItem('nai_benchmark_config', JSON.stringify(draftConfig));
+      
+      try {
+          await db.saveBenchmarkConfig(draftConfig);
+          notify('配置已保存 (同步至云端)');
+      } catch (e) {
+          console.error(e);
+          notify('保存失败，仅本地生效', 'error');
+          localStorage.setItem('nai_benchmark_config', JSON.stringify(draftConfig)); // Fallback
+      }
       
       // Safety: if active slot was deleted, reset to 0
       if (activeSlot >= draftConfig.slots.length) {
@@ -360,7 +368,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
       }
       
       setShowConfig(false);
-      notify('配置已保存');
   };
 
   // Helper Functions operate on DRAFT config now
@@ -544,6 +551,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 </button>
             </div>
 
+            {/* Slider for Grid Size */}
+            {layoutMode === 'grid' && (
+                <div className="flex items-center gap-2 flex-1 md:flex-none md:w-32 px-2">
+                    <span className="text-xs text-gray-400">🔍</span>
+                    <input 
+                        type="range" 
+                        min="100" max="300" step="10"
+                        value={minGridSize} 
+                        onChange={(e) => setMinGridSize(parseInt(e.target.value))}
+                        className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                        title="调整图片大小"
+                    />
+                </div>
+            )}
+
             {/* Search */}
             <div className="flex-1 relative">
                 <input 
@@ -686,8 +708,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
          )}
          
          {layoutMode === 'grid' ? (
-             /* --- GRID LAYOUT --- */
-             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-4 md:pr-6"> 
+             /* --- GRID LAYOUT (Dynamic Columns using minmax) --- */
+             <div 
+                className="grid gap-2 md:gap-4 md:pr-6 transition-all" 
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${minGridSize}px, 1fr))` }}
+             > 
                  {filteredArtists.map((artist, idx) => {
                      const isSelected = !!cart.find(c => c.name === artist.name);
                      const isFav = favorites.has(artist.name);
@@ -816,7 +841,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                              <div className="flex justify-between items-center mb-3">
                                  <div className="flex items-center gap-3">
                                      <h3 
-                                        className={`font-bold text-lg cursor-pointer hover:underline ${isSelected ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}
+                                        className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}
                                         onClick={() => toggleCart(artist.name)}
                                      >
                                          {artist.name}
@@ -887,20 +912,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                                      </div>
                                                  )}
 
-                                                 {/* Hover Generate Button */}
+                                                 {/* Hover Generate Button - MOVED TO CORNER */}
                                                  {apiKey && !taskRunning && !taskPending && (
-                                                     <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${displayImg ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}>
+                                                     <div className="absolute bottom-1 right-1 transition-opacity opacity-0 group-hover:opacity-100 z-10">
                                                          <button 
                                                             onClick={(e) => queueGeneration(artist, [i], e)}
-                                                            className="p-1.5 bg-white/20 hover:bg-white/40 backdrop-blur rounded-full text-white transition-colors"
+                                                            className="p-1.5 bg-black/60 hover:bg-black/80 backdrop-blur rounded-full text-white transition-colors shadow-sm"
                                                             title={`生成 ${slot.label}`}
                                                          >
-                                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                                          </button>
                                                      </div>
                                                  )}
                                              </div>
-                                             <span className="text-[10px] text-center text-gray-500 dark:text-gray-400 truncate px-1" title={slot.label}>{slot.label}</span>
+                                             <span className="text-[11px] text-center text-gray-500 dark:text-gray-400 truncate px-1 font-medium" title={slot.label}>{slot.label}</span>
                                          </div>
                                      );
                                  })}
@@ -912,6 +937,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
          )}
       </div>
 
+      {/* ... (Rest of the component remains unchanged) ... */}
+      
       {/* --- Cart Bar --- */}
       <div className={`absolute bottom-0 left-0 right-0 bg-white/95 dark:bg-gray-950/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 transition-transform duration-300 transform shadow-[0_-5px_20px_rgba(0,0,0,0.1)] z-30 ${cart.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="p-4 max-w-6xl mx-auto flex flex-col md:flex-row gap-4 items-center">
