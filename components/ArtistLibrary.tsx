@@ -412,7 +412,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
           
           // Delay to prevent 429 (Throttle)
           setIsProcessing(true);
-          await new Promise(res => setTimeout(res, 5000)); // 5s safe delay
+          await new Promise(res => setTimeout(res, 2000)); // 2s safe delay (was 5s)
 
           const task = taskQueue[0];
           setCurrentTask(task);
@@ -466,6 +466,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
               const errMsg = err.message || JSON.stringify(err);
               const is429 = errMsg.includes('429') || errMsg.includes('Concurrent') || errMsg.includes('locked');
               
+              if (is429) {
+                  addLog('Rate Limit (429) detected. Cooling down for 60s...', 'error');
+                  await new Promise(res => setTimeout(res, 60000));
+              }
+
               const artistName = artistsData?.find(a => a.id === task.artistId)?.name || 'Unknown';
               const logMsg = is429 
                 ? `Rate Limit (429) for ${artistName}. Task moved to Retry Queue.` 
