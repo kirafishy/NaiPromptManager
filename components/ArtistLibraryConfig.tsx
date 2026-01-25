@@ -13,6 +13,7 @@ interface BenchmarkConfig {
     seed: number;
     steps: number;
     scale: number;
+    interval?: number; // Added interval
 }
 
 interface ArtistLibraryConfigProps {
@@ -158,7 +159,7 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Seed (-1 = Random)</label>
                             <div className="flex gap-2">
@@ -169,11 +170,11 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                 onChange={e => setDraftConfig({...draftConfig, seed: parseInt(e.target.value)})}
                             />
                             <button
-                                onClick={() => setDraftConfig({...draftConfig, seed: Math.floor(Math.random() * 4294967295)})}
-                                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center"
-                                title="随机生成一个固定 Seed"
+                                onClick={() => setDraftConfig({...draftConfig, seed: -1})}
+                                className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs whitespace-nowrap"
+                                title="设置为 -1 (随机)"
                             >
-                                🎲
+                                随机
                             </button>
                             </div>
                         </div>
@@ -193,6 +194,16 @@ export const ArtistLibraryConfig: React.FC<ArtistLibraryConfigProps> = ({
                                     onChange={e => setDraftConfig({...draftConfig, scale: parseFloat(e.target.value)})}
                                 />
                             </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">队列间隔 (ms)</label>
+                            <input 
+                                type="number" 
+                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-sm dark:text-white"
+                                value={draftConfig.interval ?? 3000}
+                                min={500}
+                                onChange={e => setDraftConfig({...draftConfig, interval: parseInt(e.target.value)})}
+                            />
                         </div>
                     </div>
                 </div>

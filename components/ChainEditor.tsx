@@ -49,6 +49,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
   // --- Import Preset Modal State ---
   const [showImportPreset, setShowImportPreset] = useState(false);
+  // Detailed Import Config State
+  const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
+  const [importOptions, setImportOptions] = useState({
+      baseToSubject: false, // Map Source Base -> Target Subject
+      overwriteBase: false, // Overwrite Target Base
+      overwriteNegative: false,
+      mergeModules: true, // Append instead of Replace
+  });
 
   // Sync dirty state with parent (ONLY IF NOT GUEST)
   useEffect(() => {
@@ -85,8 +93,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     setChainName(chain.name);
     setChainDesc(chain.description);
     
+    // Default subject to empty, not '1girl'
     const savedVars = chain.variableValues || {};
-    setSubjectPrompt(savedVars['subject'] || '1girl');
+    setSubjectPrompt(savedVars['subject'] || '');
     
     const initialModules: Record<string, boolean> = {};
     if (chain.modules) {
@@ -189,47 +198,68 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       markChange();
   };
 
-  // --- Import Preset Logic (Cross Loading) ---
-  const handleImportPreset = (targetChain: PromptChain, action: 'apply_base' | 'apply_subject' | 'add_char') => {
-      if (!canEdit) return;
+  // --- Smart Import Logic ---
+  const initiateImport = (c: PromptChain) => {
+      setImportCandidate(c);
+      // Smart Defaults based on types
+      const isImportingCharToStyle = c.type === 'character' && !isCharacterMode;
+      const isImportingStyleToChar = c.type !== 'character' && isCharacterMode;
+
+      setImportOptions({
+          baseToSubject: isImportingCharToStyle, // If I am editing Artist, importing Char -> Put Char base into Subject
+          overwriteBase: !isImportingCharToStyle, // Otherwise (Style->Style, Char->Char), usually overwrite base
+          overwriteNegative: true,
+          mergeModules: true
+      });
+  };
+
+  const confirmImport = () => {
+      if (!importCandidate || !canEdit) return;
+      const target = importCandidate;
       
-      if (action === 'apply_base') {
-          // Load Style into Character (or Style to Style)
-          setBasePrompt(targetChain.basePrompt);
-          setNegativePrompt(targetChain.negativePrompt);
-          setModules(targetChain.modules || []);
-          // Also copy relevant params but keep existing char definitions if any
-          setParams(prev => ({
-              ...prev,
-              steps: targetChain.params.steps,
-              scale: targetChain.params.scale,
-              sampler: targetChain.params.sampler,
-              width: targetChain.params.width,
-              height: targetChain.params.height,
-              qualityToggle: targetChain.params.qualityToggle,
-              ucPreset: targetChain.params.ucPreset,
-          }));
-          notify(`已加载画师预设：${targetChain.name}`);
-      } else if (action === 'apply_subject') {
-          // Load Character into Subject Field
-          setSubjectPrompt(targetChain.basePrompt); // Character chains usually put tags in basePrompt
-          notify(`已加载角色到 Subject：${targetChain.name}`);
-      } else if (action === 'add_char') {
-          // Add Character as V4.5 Character
-          const newChar: CharacterParams = {
-              id: crypto.randomUUID(),
-              prompt: targetChain.basePrompt,
-              x: 0.5,
-              y: 0.5
-          };
-          setParams(prev => ({
-              ...prev,
-              characters: [...(prev.characters || []), newChar]
-          }));
-          notify(`已添加角色到 V4.5 列表：${targetChain.name}`);
+      // 1. Base Prompt logic
+      if (importOptions.baseToSubject) {
+          setSubjectPrompt(target.basePrompt);
+      } else if (importOptions.overwriteBase) {
+          setBasePrompt(target.basePrompt);
       }
-      
+
+      // 2. Negative
+      if (importOptions.overwriteNegative) {
+          setNegativePrompt(target.negativePrompt);
+      }
+
+      // 3. Modules
+      const newModules = (target.modules || []).map(m => ({ ...m, id: crypto.randomUUID() })); // Regen IDs
+      if (importOptions.mergeModules) {
+          setModules([...modules, ...newModules]);
+          // Auto-activate new modules
+          const newActive = { ...activeModules };
+          newModules.forEach(m => newActive[m.id] = m.isActive);
+          setActiveModules(newActive);
+      } else {
+          setModules(newModules);
+          const newActive: Record<string, boolean> = {};
+          newModules.forEach(m => newActive[m.id] = m.isActive);
+          setActiveModules(newActive);
+      }
+
+      // 4. Params (Always import basic params, but keep Char defs safe unless overwritten explicitly? No, simple copy)
+      // Merging params is tricky, let's copy common ones
+      setParams(prev => ({
+          ...prev,
+          steps: target.params.steps,
+          scale: target.params.scale,
+          sampler: target.params.sampler,
+          width: target.params.width,
+          height: target.params.height,
+          qualityToggle: target.params.qualityToggle,
+          ucPreset: target.params.ucPreset,
+      }));
+
+      notify(`已从 "${target.name}" 导入配置`);
       markChange();
+      setImportCandidate(null);
       setShowImportPreset(false);
   };
 
@@ -447,7 +477,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       <header className="flex-shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-3 flex items-center justify-between gap-2 md:gap-4 overflow-x-hidden">
         <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
           <button onClick={onBack} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors flex-shrink-0">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7 7-7m-7 7h18" /></svg>
           </button>
           
           {isEditingInfo && isOwner ? (
@@ -761,8 +791,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         </div>
       )}
 
-      {/* Import Preset Modal */}
-      {showImportPreset && (
+      {/* Import Preset List Modal */}
+      {showImportPreset && !importCandidate && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
               <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[80vh]">
                   <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -780,36 +810,66 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                       <div className="font-bold text-sm dark:text-gray-200">{c.name}</div>
                                       <div className="text-xs text-gray-500">{c.description || '无描述'}</div>
                                   </div>
-                                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      {isCharacterMode ? (
-                                          <button 
-                                              onClick={() => handleImportPreset(c, 'apply_base')}
-                                              className="text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded"
-                                          >
-                                              加载风格参数
-                                          </button>
-                                      ) : (
-                                          <>
-                                            <button 
-                                                onClick={() => handleImportPreset(c, 'apply_subject')}
-                                                className="text-xs bg-pink-100 dark:bg-pink-900 text-pink-700 dark:text-pink-300 px-2 py-1 rounded"
-                                            >
-                                                填入Subject
-                                            </button>
-                                            <button 
-                                                onClick={() => handleImportPreset(c, 'add_char')}
-                                                className="text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-1 rounded"
-                                            >
-                                                + V4.5角色
-                                            </button>
-                                          </>
-                                      )}
-                                  </div>
+                                  <button 
+                                      onClick={() => initiateImport(c)}
+                                      className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded text-xs hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors"
+                                  >
+                                      选择
+                                  </button>
                               </div>
                           ))}
                       {allChains.filter(c => (isCharacterMode ? (c.type === 'style' || !c.type) : c.type === 'character')).length === 0 && (
                           <div className="text-center text-gray-400 py-8 text-sm">暂无可用预设</div>
                       )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Import Detail/Confirm Modal */}
+      {importCandidate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
+                  <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                      <h3 className="font-bold text-gray-900 dark:text-white">导入设置: {importCandidate.name}</h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                          将 <span className="font-bold">{importCandidate.type === 'character' ? '角色' : '画师'}</span> 串导入到当前 <span className="font-bold">{chain.type === 'character' ? '角色' : '画师'}</span> 编辑器中。
+                      </div>
+                      
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                          <input type="checkbox" checked={importOptions.baseToSubject} onChange={e => setImportOptions({...importOptions, baseToSubject: e.target.checked, overwriteBase: false})} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                          <div className="text-sm dark:text-gray-200">
+                              <div>作为变量/主体导入 (推荐)</div>
+                              <div className="text-xs text-gray-500">将源 Base Prompt 填入当前 Subject，不覆盖当前 Base。</div>
+                          </div>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                          <input type="checkbox" checked={importOptions.overwriteBase} onChange={e => setImportOptions({...importOptions, overwriteBase: e.target.checked, baseToSubject: false})} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                          <div className="text-sm dark:text-gray-200">
+                              <div>覆盖 Base Prompt</div>
+                              <div className="text-xs text-gray-500">使用源 Base Prompt 替换当前 Base。</div>
+                          </div>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                          <input type="checkbox" checked={importOptions.mergeModules} onChange={e => setImportOptions({...importOptions, mergeModules: e.target.checked})} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                          <div className="text-sm dark:text-gray-200">
+                              <div>追加合并模块 (推荐)</div>
+                              <div className="text-xs text-gray-500">保留现有模块，将新模块追加到列表末尾。关闭则完全替换。</div>
+                          </div>
+                      </label>
+                      
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                          <input type="checkbox" checked={importOptions.overwriteNegative} onChange={e => setImportOptions({...importOptions, overwriteNegative: e.target.checked})} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                          <span className="text-sm dark:text-gray-200">覆盖负面 Prompt</span>
+                      </label>
+                  </div>
+                  <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl flex justify-end gap-3">
+                      <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">取消</button>
+                      <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow-lg">确认导入</button>
                   </div>
               </div>
           </div>

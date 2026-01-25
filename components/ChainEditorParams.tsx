@@ -114,15 +114,20 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </div>
                     {/* Seed Input */}
                     <div className="flex-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Seed (0随机)</label>
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Seed (空=随机)</label>
                         <input 
-                            type="text" 
+                            type="number" 
                             className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none" 
                             disabled={!canEdit}
-                            value={params.seed ?? 0} 
+                            placeholder="随机"
+                            value={params.seed === undefined || params.seed === null ? '' : params.seed} 
                             onChange={(e) => {
-                                const val = parseInt(e.target.value);
-                                setParams({...params, seed: isNaN(val) ? 0 : val}); 
+                                const val = e.target.value;
+                                if (val === '') {
+                                    setParams({...params, seed: undefined});
+                                } else {
+                                    setParams({...params, seed: parseInt(val)}); 
+                                }
                                 markChange();
                             }}
                         />

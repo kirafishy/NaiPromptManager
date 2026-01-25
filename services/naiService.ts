@@ -4,10 +4,12 @@ import { NAIParams } from '../types';
 import { api } from './api';
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
-  // Logic update: If seed is 0 or undefined, pass 0 to API (Random). 
-  // If user explicitly sets a seed (other than 0), use it.
-  // Note: NAI API treats 0 as "random seed" usually, so we pass it as explicit 0 or strict random integer.
-  const seed = (params.seed === undefined || params.seed === null) ? 0 : params.seed;
+  // Logic update: NAI API treats missing seed as random. 0 is a specific seed.
+  // We pass seed only if it is a valid number and not -1 (our internal convention for random).
+  let seed: number | undefined = undefined;
+  if (params.seed !== undefined && params.seed !== null && params.seed !== -1) {
+      seed = params.seed;
+  }
 
   // Prepare Character Captions for V4.5
   const hasCharacters = params.characters && params.characters.length > 0;
@@ -16,7 +18,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       centers: [ { x: c.x, y: c.y } ]
   })) : [];
 
-  const payload = {
+  const payload: any = {
     input: prompt, // Keep flat input as fallback or for summary
     model: "nai-diffusion-4-5-full",
     action: "generate",
@@ -44,7 +46,7 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       cfg_rescale: 0,
       noise_schedule: "karras",
       negative_prompt: negative,
-      seed: seed,
+      // seed key is added conditionally below
       
       v4_prompt: {
         caption: {
@@ -66,6 +68,10 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       prefer_brownian: true
     }
   };
+
+  if (seed !== undefined) {
+      payload.parameters.seed = seed;
+  }
 
   // 调用 Worker Proxy, 传递 API Key Header
   const blob = await api.postBinary('/generate', payload, {

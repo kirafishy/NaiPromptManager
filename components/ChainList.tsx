@@ -14,11 +14,141 @@ interface ChainListProps {
   isGuest?: boolean;
 }
 
+// Internal Component: Smart Copy Modal
+const CopyModal: React.FC<{
+    chain: PromptChain;
+    onClose: () => void;
+    notify: (msg: string) => void;
+}> = ({ chain, onClose, notify }) => {
+    // Default checked based on chain type
+    // Artist chain: usually Base (artist tag) + Modules (Style)
+    // Character chain: usually Base (char tag) + Modules (Costume)
+    const [checkBase, setCheckBase] = useState(true);
+    const [checkSubject, setCheckSubject] = useState(false); // Subject is variable, usually skipped for static copy
+    const [checkNegative, setCheckNegative] = useState(false);
+    
+    // Initialize module selection (all active modules checked by default)
+    const [selectedModules, setSelectedModules] = useState<Record<string, boolean>>(() => {
+        const initial: Record<string, boolean> = {};
+        chain.modules?.forEach(m => {
+            if (m.isActive) initial[m.id] = true;
+        });
+        return initial;
+    });
+
+    const handleCopy = () => {
+        const parts: string[] = [];
+        
+        // 1. Base
+        if (checkBase && chain.basePrompt) parts.push(chain.basePrompt);
+
+        // 2. Pre-Modules
+        chain.modules?.forEach(m => {
+            if (selectedModules[m.id] && m.position === 'pre') parts.push(m.content);
+        });
+
+        // 3. Subject (Optional)
+        if (checkSubject && chain.variableValues?.subject) parts.push(chain.variableValues.subject);
+
+        // 4. Post-Modules
+        chain.modules?.forEach(m => {
+            if (selectedModules[m.id] && (m.position === 'post' || !m.position)) parts.push(m.content);
+        });
+
+        const finalPrompt = parts.join(', ').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '');
+        navigator.clipboard.writeText(finalPrompt);
+        notify('已复制选中内容');
+        onClose();
+    };
+
+    const copyNegative = () => {
+        navigator.clipboard.writeText(chain.negativePrompt);
+        notify('负面 Prompt 已复制');
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-xl">
+                    <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Description Section (Full View) */}
+                    {chain.description && (
+                         <div className="bg-yellow-50 dark:bg-yellow-900/10 p-3 rounded-lg border border-yellow-100 dark:border-yellow-900/30 text-sm text-gray-700 dark:text-gray-300">
+                             <div className="font-bold text-xs text-yellow-600 dark:text-yellow-500 mb-1 uppercase">说明</div>
+                             <div className="whitespace-pre-wrap break-words">{chain.description}</div>
+                         </div>
+                    )}
+
+                    <div className="space-y-3">
+                        <h4 className="font-bold text-xs text-indigo-500 uppercase tracking-wider">选择要复制的内容</h4>
+                        
+                        {/* Base Prompt */}
+                        <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                            <input type="checkbox" checked={checkBase} onChange={e => setCheckBase(e.target.checked)} className="mt-1" />
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm dark:text-white">基础 Prompt (Base)</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-2 break-all">{chain.basePrompt || '(空)'}</div>
+                            </div>
+                        </label>
+
+                        {/* Modules */}
+                        {chain.modules && chain.modules.length > 0 && (
+                            <div className="space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700">
+                                {chain.modules.map(m => (
+                                    <label key={m.id} className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={!!selectedModules[m.id]} 
+                                            onChange={e => setSelectedModules({...selectedModules, [m.id]: e.target.checked})}
+                                        />
+                                        <span className="text-sm dark:text-gray-300">{m.name}</span>
+                                        <span className="text-xs text-gray-400 font-mono truncate max-w-[150px]">{m.content}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Subject */}
+                        <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                            <input type="checkbox" checked={checkSubject} onChange={e => setCheckSubject(e.target.checked)} className="mt-1" />
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm dark:text-white">变量/主体 (Subject)</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-1">{chain.variableValues?.subject || '(空)'}</div>
+                            </div>
+                        </label>
+                    </div>
+
+                    {/* Negative Prompt Quick Copy */}
+                    <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-xs text-red-500 uppercase">负面 Prompt</span>
+                            <button onClick={copyNegative} className="text-xs text-indigo-600 hover:underline">仅复制负面</button>
+                        </div>
+                        <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 rounded font-mono max-h-20 overflow-y-auto">
+                            {chain.negativePrompt || '(空)'}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl flex justify-end gap-2">
+                    <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">关闭</button>
+                    <button onClick={handleCopy} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow-lg">复制选中组合</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, isLoading, notify, isGuest = false }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -26,28 +156,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setIsModalOpen(false);
     setNewName('');
     setNewDesc('');
-  };
-
-  const copyFullPrompt = (chain: PromptChain, negative = false) => {
-      if (negative) {
-          navigator.clipboard.writeText(chain.negativePrompt);
-          notify('负面提示词已复制');
-          return;
-      }
-
-      // Concatenate Base + Active Modules
-      let parts = [];
-      if (chain.basePrompt) parts.push(chain.basePrompt);
-      if (chain.modules) {
-          chain.modules.forEach(m => {
-              if (m.isActive) parts.push(m.content);
-          });
-      }
-      
-      // Cleanup text
-      const full = parts.join(', ').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '');
-      navigator.clipboard.writeText(full);
-      notify('完整正面提示词已复制');
   };
 
   // Filter chains by Type (style or character) AND search term
@@ -104,29 +212,23 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {!isGuest && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{createLabel}</button>}
           </div>
         ) : (
-          /* Grid Layout Adjustment: Single column for mobile, more columns for larger screens */
+          /* Grid Layout */
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {filteredChains.map((chain) => (
               <div key={chain.id} onClick={() => onSelect(chain.id)} className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative">
-                {/* Copy Buttons Overlay */}
-                <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Copy Button Overlay - Trigger Modal */}
+                <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                        onClick={(e) => { e.stopPropagation(); copyFullPrompt(chain, false); }} 
-                        className="bg-white/90 dark:bg-black/70 backdrop-blur p-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
-                        title="复制完整正面词"
+                        onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }} 
+                        className="bg-white/90 dark:bg-black/70 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-xs font-bold flex items-center gap-1"
+                        title="复制/查看详情"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                    </button>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); copyFullPrompt(chain, true); }} 
-                        className="bg-white/90 dark:bg-black/70 backdrop-blur p-1.5 rounded-full shadow-sm text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200"
-                        title="复制负面词"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                        复制
                     </button>
                 </div>
 
-                {/* Preview Image: Changed from cover to contain, added background */}
+                {/* Preview Image */}
                 <div 
                     className="aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
                 >
@@ -181,7 +283,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         )}
       </div>
 
-      {/* Simple Modal */}
+      {/* Simple Create Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">
@@ -214,6 +316,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>
           </div>
         </div>
+      )}
+
+      {/* Smart Copy Modal */}
+      {copyModalChain && (
+          <CopyModal 
+            chain={copyModalChain} 
+            onClose={() => setCopyModalChain(null)} 
+            notify={notify} 
+          />
       )}
     </div>
   );
