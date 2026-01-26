@@ -89,7 +89,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     >
                         <option value={0}>Heavy (Default)</option>
                         <option value={1}>Light</option>
-                        <option value={2}>None</option>
+                        <option value={2}>Furry Focus</option>
+                        <option value={3}>Human Focus</option>
+                        <option value={4}>None</option>
                     </select>
                 </div>
             </div>

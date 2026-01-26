@@ -383,7 +383,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
           setNegativePrompt(negative);
           setParams(newParams);
           markChange();
-          notify('参数已导入 (包含 V4 设置)');
+          notify('参数已导入。注意：元数据可能缺失 Quality/Variety/Preset 设置，请按需手动调整。');
       } catch (e: any) {
           notify('解析失败: ' + e.message, 'error');
       }
@@ -785,7 +785,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                   </section>
 
                   {/* Negative Prompt */}
-                  <section>
+                  <section className="mb-8">
                     <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">全局负面 Prompt</label>
                     <textarea
                       disabled={!canEdit}

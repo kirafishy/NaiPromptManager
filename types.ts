@@ -36,7 +36,7 @@ export interface NAIParams {
   seed?: number;
   // V4.5 Specifics
   qualityToggle?: boolean; // Default true
-  ucPreset?: number; // 0: Heavy, 1: Light, 2: None
+  ucPreset?: number; // 0: Heavy, 1: Light, 2: Furry, 3: Human, 4: None
   characters?: CharacterParams[]; // Multi-character support
   
   // New Features
