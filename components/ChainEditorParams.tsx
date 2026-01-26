@@ -73,7 +73,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                         />
                         <label htmlFor="varietyBoost" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none flex items-center gap-1">
                             <span>Variety+ (多样性)</span>
-                            <span className="text-[10px] text-pink-500 bg-pink-100 dark:bg-pink-900/30 px-1 rounded">New</span>
                         </label>
                     </div>
                 </div>

@@ -322,6 +322,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                       newParams.characters = [];
                   }
                   
+                  // NEW: Parse V4 Negative Prompts for Characters
+                  if (json.v4_negative_prompt) {
+                      const v4Neg = json.v4_negative_prompt;
+                      if (v4Neg.caption?.base_caption) {
+                          negative = v4Neg.caption.base_caption;
+                      }
+                      
+                      // Match negative captions to characters if they exist
+                      if (newParams.characters.length > 0 && v4Neg.caption?.char_captions && Array.isArray(v4Neg.caption.char_captions)) {
+                          newParams.characters.forEach((char: any, idx: number) => {
+                               const negCharCap = v4Neg.caption.char_captions[idx];
+                               if (negCharCap && negCharCap.char_caption) {
+                                   char.negativePrompt = negCharCap.char_caption;
+                               }
+                          });
+                      }
+                  }
+                  
                   // New Params
                   if (json.variety_boost !== undefined) newParams.varietyBoost = json.variety_boost;
                   if (json.cfg_rescale !== undefined) newParams.cfgRescale = json.cfg_rescale;
@@ -564,7 +582,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
           {/* Left Panel - Editor */}
           <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
-              <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-32 md:pb-24">
+              {/* Added more padding bottom to prevent overlapping with fixed footer on small screens */}
+              <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-48 md:pb-32">
                   {!isOwner && (
                       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
                           {isGuest 
@@ -721,12 +740,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                               />
                                           </div>
                                           <div>
-                                              <label className="text-[10px] text-red-500/80 uppercase font-bold mb-1 block">专属负面 (Negative)</label>
+                                              {/* Replaced red style with neutral style */}
+                                              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">专属负面 (Negative)</label>
                                               <textarea 
                                                   disabled={!canEdit}
                                                   value={char.negativePrompt || ''}
                                                   onChange={(e) => updateCharacter(idx, { negativePrompt: e.target.value })}
-                                                  className="w-full text-xs p-2 border border-red-100 dark:border-red-900/30 rounded bg-red-50/50 dark:bg-red-900/10 text-gray-800 dark:text-red-100/80 h-10 resize-none focus:ring-1 focus:ring-red-500/50 outline-none placeholder-gray-400"
+                                                  className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                                   placeholder="Optional"
                                               />
                                           </div>
