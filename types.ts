@@ -22,6 +22,7 @@ export interface PromptModule {
 export interface CharacterParams {
   id: string;
   prompt: string;
+  negativePrompt?: string; // New: Per-character negative prompt
   x: number; // 0.0 to 1.0
   y: number; // 0.0 to 1.0
 }
@@ -37,6 +38,11 @@ export interface NAIParams {
   qualityToggle?: boolean; // Default true
   ucPreset?: number; // 0: Heavy, 1: Light, 2: None
   characters?: CharacterParams[]; // Multi-character support
+  
+  // New Features
+  useCoords?: boolean; // true = Manual Coords, false = AI's Choice
+  varietyBoost?: boolean; // Variety+
+  cfgRescale?: number; // Prompt Guidance Rescale (0.0 - 1.0)
 }
 
 export type ChainType = 'style' | 'character';

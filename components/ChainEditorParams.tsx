@@ -41,21 +41,41 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             
             {/* V4.5 Quality & Preset */}
             <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                    <input 
-                    type="checkbox" 
-                    id="qualityToggle"
-                    disabled={!canEdit}
-                    checked={params.qualityToggle ?? true}
-                    onChange={(e) => {
-                        setParams({ ...params, qualityToggle: e.target.checked });
-                        markChange();
-                    }}
-                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="qualityToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                        Quality Tags (Auto)
-                    </label>
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                        <input 
+                        type="checkbox" 
+                        id="qualityToggle"
+                        disabled={!canEdit}
+                        checked={params.qualityToggle ?? true}
+                        onChange={(e) => {
+                            setParams({ ...params, qualityToggle: e.target.checked });
+                            markChange();
+                        }}
+                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        <label htmlFor="qualityToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                            Quality Tags (Auto)
+                        </label>
+                    </div>
+                    {/* Variety+ Toggle */}
+                    <div className="flex items-center gap-2">
+                        <input 
+                        type="checkbox" 
+                        id="varietyBoost"
+                        disabled={!canEdit}
+                        checked={params.varietyBoost ?? false}
+                        onChange={(e) => {
+                            setParams({ ...params, varietyBoost: e.target.checked });
+                            markChange();
+                        }}
+                        className="w-4 h-4 text-pink-600 rounded focus:ring-pink-500"
+                        />
+                        <label htmlFor="varietyBoost" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none flex items-center gap-1">
+                            <span>Variety+ (多样性)</span>
+                            <span className="text-[10px] text-pink-500 bg-pink-100 dark:bg-pink-900/30 px-1 rounded">New</span>
+                        </label>
+                    </div>
                 </div>
                 <div>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">负面预设 (UC Preset)</label>
@@ -104,14 +124,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             }}
                         />
                     </div>
-                    <div className="flex-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Scale</label>
-                        <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none" 
-                            disabled={!canEdit}
-                            value={params.scale} 
-                            onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); markChange();}}
-                        />
-                    </div>
                     {/* Seed Input */}
                     <div className="flex-1">
                         <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Seed (空=随机)</label>
@@ -130,6 +142,36 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                                 }
                                 markChange();
                             }}
+                        />
+                    </div>
+                </div>
+                
+                {/* Advanced Scales */}
+                <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs text-gray-500 dark:text-gray-500 block">Scale (Guidance)</label>
+                            <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400">{params.scale}</span>
+                        </div>
+                        <input 
+                            type="range" min="1" max="25" step="0.1"
+                            disabled={!canEdit}
+                            value={params.scale}
+                            onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); markChange();}}
+                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs text-gray-500 dark:text-gray-500 block" title="Prompt Guidance Rescale">Rescale (CFG Correction)</label>
+                            <span className="text-xs font-mono text-pink-600 dark:text-pink-400">{params.cfgRescale ?? 0}</span>
+                        </div>
+                        <input 
+                            type="range" min="0" max="1" step="0.05"
+                            disabled={!canEdit}
+                            value={params.cfgRescale ?? 0}
+                            onChange={(e) => {setParams({...params, cfgRescale: parseFloat(e.target.value)}); markChange();}}
+                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-pink-600"
                         />
                     </div>
                 </div>

@@ -88,6 +88,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     setParams({
         width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: 0, 
         qualityToggle: true, ucPreset: 0, characters: [],
+        useCoords: chain.params?.useCoords ?? true, // Default to Manual for backward compatibility
+        varietyBoost: chain.params?.varietyBoost ?? false,
+        cfgRescale: chain.params?.cfgRescale ?? 0,
         ...chain.params
     });
     setChainName(chain.name);
@@ -301,6 +304,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                       if (v4.caption?.base_caption) {
                           prompt = v4.caption.base_caption;
                       }
+                      // V4.5 AI Choice / Manual
+                      if (v4.use_coords !== undefined) {
+                          newParams.useCoords = v4.use_coords;
+                      }
+
                       newParams.characters = [];
                       if (v4.caption?.char_captions && Array.isArray(v4.caption.char_captions)) {
                           newParams.characters = v4.caption.char_captions.map((cc: any) => ({
@@ -313,6 +321,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                   } else {
                       newParams.characters = [];
                   }
+                  
+                  // New Params
+                  if (json.variety_boost !== undefined) newParams.varietyBoost = json.variety_boost;
+                  if (json.cfg_rescale !== undefined) newParams.cfgRescale = json.cfg_rescale;
+
               } catch(e) { console.error(e); }
           } else {
               const negIndex = rawMeta.indexOf('Negative prompt:');
@@ -665,11 +678,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                   <section className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-100 dark:border-indigo-800/50">
                       <div className="flex justify-between items-center mb-3">
                           <label className="block text-sm font-semibold text-indigo-600 dark:text-indigo-300">3. 多角色管理 (V4.5 Characters)</label>
-                          {canEdit && (
-                              <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
-                                  + 添加角色
-                              </button>
-                          )}
+                          <div className="flex gap-2 items-center">
+                              {/* AI Choice Toggle */}
+                              <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
+                                  <input 
+                                      type="checkbox" 
+                                      disabled={!canEdit}
+                                      checked={!(params.useCoords ?? true)} 
+                                      onChange={(e) => {
+                                          setParams({ ...params, useCoords: !e.target.checked });
+                                          markChange();
+                                      }}
+                                      className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-0" 
+                                  />
+                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-200">AI 自动构图</span>
+                              </label>
+
+                              {canEdit && (
+                                  <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
+                                      + 添加角色
+                                  </button>
+                              )}
+                          </div>
                       </div>
                       
                       <div className="space-y-3">
@@ -677,20 +707,32 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                               <div className="text-xs text-gray-400 text-center py-2">暂无角色定义，Prompt 将作为整体处理。</div>
                           )}
                           {(params.characters || []).map((char, idx) => (
-                              <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm">
+                              <div key={char.id} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                                   <div className="flex gap-3 items-start">
-                                      <div className="flex-1">
-                                          <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Prompt</label>
-                                          <textarea 
-                                              disabled={!canEdit}
-                                              value={char.prompt}
-                                              onChange={(e) => updateCharacter(idx, { prompt: e.target.value })}
-                                              className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
-                                              placeholder="e.g. 1girl, blue hair, standing"
-                                          />
+                                      <div className="flex-1 space-y-2">
+                                          <div>
+                                              <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Prompt</label>
+                                              <textarea 
+                                                  disabled={!canEdit}
+                                                  value={char.prompt}
+                                                  onChange={(e) => updateCharacter(idx, { prompt: e.target.value })}
+                                                  className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                  placeholder="e.g. 1girl, blue hair, standing"
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="text-[10px] text-red-500/80 uppercase font-bold mb-1 block">专属负面 (Negative)</label>
+                                              <textarea 
+                                                  disabled={!canEdit}
+                                                  value={char.negativePrompt || ''}
+                                                  onChange={(e) => updateCharacter(idx, { negativePrompt: e.target.value })}
+                                                  className="w-full text-xs p-2 border border-red-100 dark:border-red-900/30 rounded bg-red-50/50 dark:bg-red-900/10 text-gray-800 dark:text-red-100/80 h-10 resize-none focus:ring-1 focus:ring-red-500/50 outline-none placeholder-gray-400"
+                                                  placeholder="Optional"
+                                              />
+                                          </div>
                                       </div>
                                       <div className="w-24 flex flex-col gap-2">
-                                          <div>
+                                          <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
                                               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center X</label>
                                               <input 
                                                   type="number" step="0.1" min="0" max="1"
@@ -700,7 +742,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                                   className="w-full text-xs p-1 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                                               />
                                           </div>
-                                          <div>
+                                          <div className={!(params.useCoords ?? true) ? "opacity-40 pointer-events-none grayscale" : ""}>
                                               <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Center Y</label>
                                               <input 
                                                   type="number" step="0.1" min="0" max="1"
@@ -724,7 +766,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
                   {/* Negative Prompt */}
                   <section>
-                    <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">负面 Prompt</label>
+                    <label className="block text-sm font-semibold text-red-500 dark:text-red-400 mb-2">全局负面 Prompt</label>
                     <textarea
                       disabled={!canEdit}
                       className={`w-full border rounded-lg p-3 outline-none font-mono text-sm leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-red-900 dark:text-red-100/80 focus:ring-1 focus:ring-red-500/50'}`}

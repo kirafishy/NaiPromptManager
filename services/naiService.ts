@@ -13,10 +13,23 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
 
   // Prepare Character Captions for V4.5
   const hasCharacters = params.characters && params.characters.length > 0;
+  
+  // 1. Positive Character Captions
   const charCaptions = hasCharacters ? params.characters!.map(c => ({
       char_caption: c.prompt,
       centers: [ { x: c.x, y: c.y } ]
   })) : [];
+
+  // 2. Negative Character Captions (Structure must mirror positive)
+  const charNegativeCaptions = hasCharacters ? params.characters!.map(c => ({
+      char_caption: c.negativePrompt || "", // Use empty string placeholder if undefined
+      centers: [ { x: c.x, y: c.y } ] // Coordinates mirrored
+  })) : [];
+
+  // 3. AI's Choice Logic: 
+  // API param 'use_coords': false = AI Choice, true = Manual.
+  // We default to true (manual) if characters exist for backward compatibility, unless explicitly set to false.
+  const useCoords = params.useCoords ?? hasCharacters; 
 
   const payload: any = {
     input: prompt, // Keep flat input as fallback or for summary
@@ -35,6 +48,10 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       qualityToggle: params.qualityToggle ?? true, // Default to true
       ucPreset: params.ucPreset ?? 0, // Default to 0 (Heavy)
       
+      // New Features
+      variety_boost: params.varietyBoost ?? false,
+      cfg_rescale: params.cfgRescale ?? 0,
+
       // Legacy / Standard params
       sm: false,
       sm_dyn: false,
@@ -43,7 +60,6 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
       legacy: false,
       add_original_image: true,
       uncond_scale: 1,
-      cfg_rescale: 0,
       noise_schedule: "karras",
       negative_prompt: negative,
       // seed key is added conditionally below
@@ -53,13 +69,13 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
           base_caption: prompt, // The compiled global prompt
           char_captions: charCaptions
         },
-        use_coords: hasCharacters, // Only enable coords if we have characters
+        use_coords: useCoords, // Controlled by UI toggle
         use_order: true
       },
       v4_negative_prompt: {
         caption: {
           base_caption: negative,
-          char_captions: []
+          char_captions: charNegativeCaptions
         },
         legacy_uc: false
       },
