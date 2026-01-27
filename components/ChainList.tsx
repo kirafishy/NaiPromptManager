@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PromptChain, ChainType } from '../types';
 
 interface ChainListProps {
@@ -149,6 +149,41 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
+  const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
+  const [favOnly, setFavOnly] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  // Load favorites from localStorage (client-side only)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem('nai_chain_favs');
+      if (saved) {
+        const parsed: string[] = JSON.parse(saved);
+        setFavorites(new Set(parsed));
+      }
+    } catch (e) {
+      console.error('Failed to load chain favorites', e);
+    }
+  }, []);
+
+  const toggleFav = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      try {
+        localStorage.setItem('nai_chain_favs', JSON.stringify(Array.from(next)));
+      } catch (err) {
+        console.error('Failed to save chain favorites', err);
+      }
+      return next;
+    });
+  };
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -158,12 +193,32 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setNewDesc('');
   };
 
-  // Filter chains by Type (style or character) AND search term
-  const filteredChains = chains.filter(c => 
-    (c.type === type || (!c.type && type === 'style')) && // Backward compat: default to style if no type
-    (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-     c.description.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filter chains by Type (style or character), search term, and favorites (optional)
+  const filteredChains = chains
+    .filter(c => 
+      (c.type === type || (!c.type && type === 'style')) && // Backward compat: default to style if no type
+      (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+       c.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    )
+    .filter(c => !favOnly || favorites.has(c.id))
+    .slice()
+    .sort((a, b) => {
+      const ca = a.createdAt || 0;
+      const cb = b.createdAt || 0;
+      const ua = a.updatedAt || ca;
+      const ub = b.updatedAt || cb;
+      switch (sortOption) {
+        case 'created_asc':
+          return ca - cb;
+        case 'created_desc':
+          return cb - ca;
+        case 'updated_asc':
+          return ua - ub;
+        case 'updated_desc':
+        default:
+          return ub - ua;
+      }
+    });
 
   const title = type === 'character' ? '我的角色串' : '我的画师串';
   const subtitle = type === 'character' ? '管理角色外观、服装与特征预设。' : '管理并迭代你的 NovelAI 提示词风格组合。';
@@ -193,6 +248,34 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
+             </div>
+             {/* Sort & Favorite Controls */}
+             <div className="flex gap-2 w-full md:w-auto items-center">
+                <select
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value as any)}
+                  className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-xs rounded-lg px-2 py-2 focus:ring-2 focus:ring-indigo-500 outline-none w-full md:w-40"
+                >
+                  <option value="updated_desc">按最近更新</option>
+                  <option value="updated_asc">按最早更新</option>
+                  <option value="created_desc">按最近创建</option>
+                  <option value="created_asc">按最早创建</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setFavOnly(!favOnly)}
+                  className={`px-3 py-2 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
+                    favOnly
+                      ? 'bg-yellow-50 border-yellow-300 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-400'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-400'
+                  }`}
+                  title="仅显示收藏的串"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path>
+                  </svg>
+                  <span className="hidden md:inline">收藏</span>
+                </button>
              </div>
             {!isGuest && (
                 <button
@@ -254,6 +337,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 <div className="p-3 flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate pr-2 w-full" title={chain.name}>{chain.name}</h3>
+                    <button
+                      type="button"
+                      onClick={(e) => toggleFav(chain.id, e)}
+                      className={`ml-2 p-1 rounded-full flex-shrink-0 ${
+                        favorites.has(chain.id)
+                          ? 'text-yellow-500'
+                          : 'text-gray-300 hover:text-yellow-400 dark:text-gray-500 dark:hover:text-yellow-400'
+                      }`}
+                      title={favorites.has(chain.id) ? '取消收藏' : '收藏该串'}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill={favorites.has(chain.id) ? 'currentColor' : 'none'} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.8.77.38 1.178l-4.244 4.134a.563.563 0 00-.153.476l1.24 5.376c.13.565-.487 1.01-.967.756L12 18.232l-4.894 3.08c-.48.254-1.097-.19-.967-.756l1.24-5.376a.563.563 0 00-.153-.476L2.985 10.575c-.42-.408-.183-1.134.38-1.178l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                      </svg>
+                    </button>
                   </div>
                   <p className="text-gray-500 dark:text-gray-400 text-xs mb-2 line-clamp-2 h-8 leading-tight">{chain.description || '暂无描述'}</p>
                   
