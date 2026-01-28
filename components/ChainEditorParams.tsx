@@ -16,7 +16,7 @@ const RESOLUTIONS = {
 };
 
 export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, setParams, canEdit, markChange }) => {
-    
+
     const handleResolutionChange = (mode: string) => {
         if (!canEdit && mode !== 'Custom') return;
         if (canEdit && mode !== 'Custom') {
@@ -38,21 +38,21 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
     return (
         <section className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">参数设置</h3>
-            
+
             {/* V4.5 Quality & Preset */}
             <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
-                        <input 
-                        type="checkbox" 
-                        id="qualityToggle"
-                        disabled={!canEdit}
-                        checked={params.qualityToggle ?? true}
-                        onChange={(e) => {
-                            setParams({ ...params, qualityToggle: e.target.checked });
-                            markChange();
-                        }}
-                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        <input
+                            type="checkbox"
+                            id="qualityToggle"
+                            disabled={!canEdit}
+                            checked={params.qualityToggle ?? true}
+                            onChange={(e) => {
+                                setParams({ ...params, qualityToggle: e.target.checked });
+                                markChange();
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
                         />
                         <label htmlFor="qualityToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                             正面质量预设
@@ -60,16 +60,16 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     </div>
                     {/* Variety+ Toggle */}
                     <div className="flex items-center gap-2">
-                        <input 
-                        type="checkbox" 
-                        id="variety"
-                        disabled={!canEdit}
-                        checked={params.variety ?? false}
-                        onChange={(e) => {
-                            setParams({ ...params, variety: e.target.checked });
-                            markChange();
-                        }}
-                        className="w-4 h-4 text-pink-600 rounded focus:ring-pink-500"
+                        <input
+                            type="checkbox"
+                            id="variety"
+                            disabled={!canEdit}
+                            checked={params.variety ?? false}
+                            onChange={(e) => {
+                                setParams({ ...params, variety: e.target.checked });
+                                markChange();
+                            }}
+                            className="w-4 h-4 text-pink-600 rounded focus:ring-pink-500"
                         />
                         <label htmlFor="variety" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none flex items-center gap-1">
                             <span>Variety+ (多样性)</span>
@@ -78,14 +78,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 </div>
                 <div>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">负面预设</label>
-                    <select 
-                    disabled={!canEdit}
-                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
-                    value={params.ucPreset ?? 0}
-                    onChange={(e) => {
-                        setParams({ ...params, ucPreset: parseInt(e.target.value) });
-                        markChange();
-                    }}
+                    <select
+                        disabled={!canEdit}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        value={params.ucPreset ?? 0}
+                        onChange={(e) => {
+                            setParams({ ...params, ucPreset: parseInt(e.target.value) });
+                            markChange();
+                        }}
                     >
                         <option value={0}>Heavy (Default)</option>
                         <option value={1}>Light</option>
@@ -99,7 +99,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">图片尺寸</label>
-                    <select 
+                    <select
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={getCurrentResolutionMode()}
@@ -114,13 +114,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                 <div className="flex gap-2">
                     <div className="flex-1">
                         <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">步数（最大 28）</label>
-                        <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none" 
+                        <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                             disabled={!canEdit}
-                            value={params.steps} 
+                            value={params.steps}
                             max={28}
                             onChange={(e) => {
                                 const val = Math.min(28, parseInt(e.target.value) || 0);
-                                setParams({...params, steps: val}); 
+                                setParams({ ...params, steps: val });
                                 markChange();
                             }}
                         />
@@ -128,27 +128,28 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                     {/* Seed Input */}
                     <div className="flex-1">
                         <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">Seed（留空=随机）</label>
-                        <input 
-                            type="number" 
-                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none" 
+                        <input
+                            type="number"
+                            className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                             disabled={!canEdit}
                             placeholder="随机"
-                            value={params.seed === undefined || params.seed === null ? '' : params.seed} 
+                            value={params.seed === undefined || params.seed === null ? '' : params.seed}
                             onChange={(e) => {
                                 const val = e.target.value;
                                 if (val === '') {
-                                    setParams({...params, seed: undefined});
+                                    setParams({ ...params, seed: undefined });
                                 } else {
-                                    setParams({...params, seed: parseInt(val)}); 
+                                    setParams({ ...params, seed: parseInt(val) });
                                 }
                                 markChange();
                             }}
                         />
                     </div>
                 </div>
-                
+
                 {/* Advanced Scales */}
                 <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    {/* Scale Controls */}
                     <div>
                         <div className="flex justify-between items-center mb-1">
                             <label className="text-xs text-gray-500 dark:text-gray-500 block">CFG Scale</label>
@@ -158,7 +159,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             type="range" min="0" max="10" step="0.1"
                             disabled={!canEdit}
                             value={params.scale}
-                            onChange={(e) => {setParams({...params, scale: parseFloat(e.target.value)}); markChange();}}
+                            onChange={(e) => { setParams({ ...params, scale: parseFloat(e.target.value) }); markChange(); }}
                             className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
                         />
                     </div>
@@ -167,14 +168,35 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({ params, se
                             <label className="text-xs text-gray-500 dark:text-gray-500 block">CFG Rescale</label>
                             <span className="text-xs font-mono text-pink-600 dark:text-pink-400">{params.cfgRescale ?? 0}</span>
                         </div>
-                        <input 
+                        <input
                             type="range" min="0" max="1" step="0.05"
                             disabled={!canEdit}
                             value={params.cfgRescale ?? 0}
-                            onChange={(e) => {setParams({...params, cfgRescale: parseFloat(e.target.value)}); markChange();}}
+                            onChange={(e) => { setParams({ ...params, cfgRescale: parseFloat(e.target.value) }); markChange(); }}
                             className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-pink-600"
                         />
                     </div>
+                </div>
+
+                {/* Sampler Selection - New Requirement */}
+                <div className="md:col-span-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">采样器 (Sampler)</label>
+                    <select
+                        disabled={!canEdit}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
+                        value={params.sampler || 'k_euler_ancestral'}
+                        onChange={(e) => {
+                            setParams({ ...params, sampler: e.target.value });
+                            markChange();
+                        }}
+                    >
+                        <option value="k_euler_ancestral">Euler Ancestral (Default)</option>
+                        <option value="k_euler">Euler</option>
+                        <option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option>
+                        <option value="k_dpmpp_2m_sde">DPM++ 2M SDE</option>
+                        <option value="k_dpmpp_2m">DPM++ 2M</option>
+                        <option value="k_dpmpp_sde">DPM++ SDE</option>
+                    </select>
                 </div>
             </div>
         </section>
