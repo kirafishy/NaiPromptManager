@@ -53,10 +53,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     // Detailed Import Config State
     const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
     const [importOptions, setImportOptions] = useState({
-        baseToSubject: false, // Map Source Base -> Target Subject
-        overwriteBase: false, // Overwrite Target Base
-        overwriteNegative: false,
-        mergeModules: true, // Append instead of Replace
+        importPrompt: true,      // Base Prompt + Subject Prompt
+        importNegative: true,    // Negative Prompt
+        importModules: true,     // Modules array
+        importCharacters: true,  // Characters params
+        appendCharacters: false, // Append Characters (if false, replace)
+        importSettings: true,    // Resolution, Steps, Scale, Sampler...
+        importSeed: true,        // Seed
     });
 
     // --- Favorites (for preset sort), re-read when opening modal ---
@@ -229,15 +232,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     // --- Smart Import Logic ---
     const initiateImport = (c: PromptChain) => {
         setImportCandidate(c);
-        // Smart Defaults based on types
-        const isImportingCharToStyle = c.type === 'character' && !isCharacterMode;
-        const isImportingStyleToChar = c.type !== 'character' && isCharacterMode;
-
+        // Default: Check all compatible, but maybe not Append Characters by default
         setImportOptions({
-            baseToSubject: isImportingCharToStyle, // If I am editing Artist, importing Char -> Put Char base into Subject
-            overwriteBase: !isImportingCharToStyle, // Otherwise (Style->Style, Char->Char), usually overwrite base
-            overwriteNegative: true,
-            mergeModules: true
+            importPrompt: true,
+            importNegative: true,
+            importModules: true,
+            importCharacters: c.params?.characters && c.params.characters.length > 0 ? true : false,
+            appendCharacters: false, // Default replace
+            importSettings: true,
+            importSeed: true,
         });
     };
 
@@ -245,45 +248,70 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         if (!importCandidate || !canEdit) return;
         const target = importCandidate;
 
-        // 1. Base Prompt logic
-        if (importOptions.baseToSubject) {
-            setSubjectPrompt(target.basePrompt);
-        } else if (importOptions.overwriteBase) {
-            setBasePrompt(target.basePrompt);
+        // 1. Prompt (Base + Subject)
+        if (importOptions.importPrompt) {
+            if (target.basePrompt) setBasePrompt(target.basePrompt);
+            // If source has subject in vars, import it
+            const targetSubject = target.variableValues?.['subject'] || '';
+            if (targetSubject) setSubjectPrompt(targetSubject);
         }
 
         // 2. Negative
-        if (importOptions.overwriteNegative) {
-            setNegativePrompt(target.negativePrompt);
+        if (importOptions.importNegative) {
+            setNegativePrompt(target.negativePrompt || '');
         }
 
         // 3. Modules
-        const newModules = (target.modules || []).map(m => ({ ...m, id: crypto.randomUUID() })); // Regen IDs
-        if (importOptions.mergeModules) {
-            setModules([...modules, ...newModules]);
-            // Auto-activate new modules
+        if (importOptions.importModules && target.modules && target.modules.length > 0) {
+            // Always Append for now as "Modules" implies add-ons? 
+            // Actually user said "Modules" checkbox. Usually we might want to replace or append.
+            // Let's assume Append for modules to be safe, or just Replace?
+            // Previous logic had "mergeModules". Let's assume Append is safer for modules to avoid losing existing structure.
+            // BUT, if I import a full preset, I might want to replace.
+            // Let's stick to: Modules are appended.
+            const newModules = target.modules.map(m => ({ ...m, id: crypto.randomUUID() }));
+            setModules(prev => [...prev, ...newModules]); // Append
+
             const newActive = { ...activeModules };
-            newModules.forEach(m => newActive[m.id] = m.isActive);
-            setActiveModules(newActive);
-        } else {
-            setModules(newModules);
-            const newActive: Record<string, boolean> = {};
             newModules.forEach(m => newActive[m.id] = m.isActive);
             setActiveModules(newActive);
         }
 
-        // 4. Params (Always import basic params, but keep Char defs safe unless overwritten explicitly? No, simple copy)
-        // Merging params is tricky, let's copy common ones
-        setParams(prev => ({
-            ...prev,
-            steps: target.params.steps,
-            scale: target.params.scale,
-            sampler: target.params.sampler,
-            width: target.params.width,
-            height: target.params.height,
-            qualityToggle: target.params.qualityToggle,
-            ucPreset: target.params.ucPreset,
-        }));
+        // 4. Characters
+        if (importOptions.importCharacters && target.params?.characters) {
+            const newChars = target.params.characters.map(c => ({
+                ...c,
+                id: crypto.randomUUID() // Regen IDs
+            }));
+
+            if (importOptions.appendCharacters) {
+                setParams(prev => ({ ...prev, characters: [...(prev.characters || []), ...newChars] }));
+            } else {
+                setParams(prev => ({ ...prev, characters: newChars }));
+            }
+        }
+
+        // 5. Settings
+        if (importOptions.importSettings) {
+            setParams(prev => ({
+                ...prev,
+                steps: target.params?.steps ?? prev.steps,
+                scale: target.params?.scale ?? prev.scale,
+                sampler: target.params?.sampler ?? prev.sampler,
+                width: target.params?.width ?? prev.width,
+                height: target.params?.height ?? prev.height,
+                qualityToggle: target.params?.qualityToggle ?? prev.qualityToggle,
+                ucPreset: target.params?.ucPreset ?? prev.ucPreset,
+                cfgRescale: target.params?.cfgRescale ?? prev.cfgRescale,
+                variety: target.params?.variety ?? prev.variety,
+                useCoords: target.params?.useCoords ?? prev.useCoords
+            }));
+        }
+
+        // 6. Seed
+        if (importOptions.importSeed && target.params?.seed !== undefined) {
+            setParams(prev => ({ ...prev, seed: target.params.seed }));
+        }
 
         notify(`已从 "${target.name}" 导入配置`);
         markChange();
@@ -976,47 +1004,54 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
             {/* Import Detail/Confirm Modal */}
             {importCandidate && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                            <h3 className="font-bold text-gray-900 dark:text-white">导入设置: {importCandidate.name}</h3>
+                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700">
+                        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 rounded-t-xl">
+                            <h3 className="font-bold text-gray-900 dark:text-white truncate" title={importCandidate.name}>
+                                导入: {importCandidate.name}
+                            </h3>
                         </div>
-                        <div className="p-4 space-y-4">
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                将 <span className="font-bold">{importCandidate.type === 'character' ? '角色' : '画师'}</span> 串导入到当前 <span className="font-bold">{chain.type === 'character' ? '角色' : '画师'}</span> 编辑器中。
+                        <div className="p-5 space-y-3">
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importPrompt} onChange={e => setImportOptions({ ...importOptions, importPrompt: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">提示词 (Prompt)</span>
+                            </label>
+
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importNegative} onChange={e => setImportOptions({ ...importOptions, importNegative: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">负面提示词 (Undesired Content)</span>
+                            </label>
+
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">增强模块 (Modules)</span>
+                            </label>
+
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-3 cursor-pointer select-none">
+                                    <input type="checkbox" checked={importOptions.importCharacters} onChange={e => setImportOptions({ ...importOptions, importCharacters: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                    <span className="text-sm font-medium dark:text-gray-200">多角色管理 (Characters)</span>
+                                </label>
+                                {importOptions.importCharacters && (
+                                    <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
+                                        <input type="checkbox" checked={importOptions.appendCharacters} onChange={e => setImportOptions({ ...importOptions, appendCharacters: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加 (Append)</span>
+                                    </label>
+                                )}
                             </div>
 
-                            <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                                <input type="checkbox" checked={importOptions.baseToSubject} onChange={e => setImportOptions({ ...importOptions, baseToSubject: e.target.checked, overwriteBase: false })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                <div className="text-sm dark:text-gray-200">
-                                    <div>作为变量/主体导入 (推荐)</div>
-                                    <div className="text-xs text-gray-500">将源基础提示词填入当前主体，不覆盖当前基础提示词。</div>
-                                </div>
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importSettings} onChange={e => setImportOptions({ ...importOptions, importSettings: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">生成参数 (Settings)</span>
                             </label>
 
-                            <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                                <input type="checkbox" checked={importOptions.overwriteBase} onChange={e => setImportOptions({ ...importOptions, overwriteBase: e.target.checked, baseToSubject: false })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                <div className="text-sm dark:text-gray-200">
-                                    <div>覆盖 Base Prompt</div>
-                                    <div className="text-xs text-gray-500">使用源基础提示词替换当前基础提示词。</div>
-                                </div>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                                <input type="checkbox" checked={importOptions.mergeModules} onChange={e => setImportOptions({ ...importOptions, mergeModules: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                <div className="text-sm dark:text-gray-200">
-                                    <div>追加合并模块 (推荐)</div>
-                                    <div className="text-xs text-gray-500">保留现有模块，将新模块追加到列表末尾。关闭则完全替换。</div>
-                                </div>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                                <input type="checkbox" checked={importOptions.overwriteNegative} onChange={e => setImportOptions({ ...importOptions, overwriteNegative: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                <span className="text-sm dark:text-gray-200">覆盖负面提示词</span>
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importSeed} onChange={e => setImportOptions({ ...importOptions, importSeed: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">种子 (Seed)</span>
                             </label>
                         </div>
-                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl flex justify-end gap-3">
-                            <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">取消</button>
-                            <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold shadow-lg">确认导入</button>
+                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                            <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors">取消</button>
+                            <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded shadow-lg shadow-indigo-500/20 transition-all">导入</button>
                         </div>
                     </div>
                 </div>
