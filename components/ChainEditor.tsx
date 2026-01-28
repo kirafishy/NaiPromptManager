@@ -59,6 +59,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       mergeModules: true, // Append instead of Replace
   });
 
+  // --- Favorites (for preset sort), re-read when opening modal ---
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem('nai_chain_favs');
+      if (saved) setFavorites(new Set(JSON.parse(saved) as string[]));
+    } catch { /* ignore */ }
+  }, [showImportPreset]);
+
   // Sync dirty state with parent (ONLY IF NOT GUEST)
   useEffect(() => {
     if (!isGuest) {
@@ -616,11 +626,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       </header>
 
       {/* Editor Content */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+      <div className={`flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden ${isOwner ? 'pb-20 lg:pb-0' : ''}`}>
           {/* Left Panel - Editor */}
           <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
-              {/* Added more padding bottom to prevent overlapping with fixed footer on small screens */}
-              <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-48 md:pb-32">
+              <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto w-full pb-32 md:pb-24">
                   {!isOwner && (
                       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4 text-sm text-yellow-700 dark:text-yellow-400">
                           {isGuest 
@@ -840,9 +849,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                   />
               </div>
 
-              {/* Sticky Footer for Save Actions - ONLY FOR OWNER */}
+              {/* Save Footer: fixed on mobile so always visible, sticky in left panel on lg */}
               {isOwner && (
-                <div className="sticky bottom-0 z-30 w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transition-transform duration-300">
+                <div className="fixed bottom-0 left-0 right-0 lg:sticky lg:left-auto lg:right-auto lg:bottom-0 z-30 w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transition-transform duration-300">
                     <div className="text-xs text-gray-500 ml-2">
                         {hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
                     </div>
@@ -890,46 +899,56 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
       )}
 
       {/* Import Preset List Modal */}
-      {showImportPreset && !importCandidate && (
+      {showImportPreset && !importCandidate && (() => {
+          const filtered = allChains.filter(c => (isCharacterMode ? (c.type === 'style' || !c.type) : c.type === 'character'));
+          const sorted = [...filtered].sort((a, b) => {
+              const aFav = favorites.has(a.id); const bFav = favorites.has(b.id);
+              if (aFav && !bFav) return -1; if (!aFav && bFav) return 1; return 0;
+          });
+          return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
-                  <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl md:max-w-5xl lg:max-w-6xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[85vh]">
+                  <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0">
                       <h3 className="font-bold dark:text-white">
                           引用{isCharacterMode ? '画师串' : '角色串'}预设
                       </h3>
                       <button onClick={() => setShowImportPreset(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-1.5">
-                      {allChains
-                          .filter(c => (isCharacterMode ? (c.type === 'style' || !c.type) : c.type === 'character'))
-                          .map(c => (
-                              <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 group">
-                                  <div className="flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+                  <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                          {sorted.map(c => (
+                              <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => initiateImport(c)}
+                                  className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 bg-white dark:bg-gray-800/80 overflow-hidden text-left transition-colors"
+                              >
+                                  <div className="aspect-square w-full bg-gray-100 dark:bg-gray-700 flex-shrink-0 relative">
                                       {c.previewImage ? (
-                                          <img src={c.previewImage} alt="" className="w-full h-full object-cover" />
+                                          <img src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
                                       ) : (
-                                          <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">无图</div>
+                                          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">无图</div>
+                                      )}
+                                      {favorites.has(c.id) && (
+                                          <span className="absolute top-1 right-1 text-amber-500" title="已收藏">★</span>
                                       )}
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                      <div className="font-bold text-sm dark:text-gray-200 truncate">{c.name}</div>
-                                      <div className="text-xs text-gray-500 truncate mt-0.5">{c.description || '无描述'}</div>
+                                  <div className="p-2 flex-1 min-h-0 flex flex-col">
+                                      <div className="font-semibold text-sm dark:text-gray-200 truncate">{c.name}</div>
+                                      <div className="text-xs text-gray-500 truncate mt-0.5 flex-1">{c.description || '无描述'}</div>
+                                      <span className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">选择</span>
                                   </div>
-                                  <button 
-                                      onClick={() => initiateImport(c)}
-                                      className="flex-shrink-0 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded text-xs hover:bg-indigo-100 dark:hover:bg-indigo-800 transition-colors"
-                                  >
-                                      选择
-                                  </button>
-                              </div>
+                              </button>
                           ))}
-                      {allChains.filter(c => (isCharacterMode ? (c.type === 'style' || !c.type) : c.type === 'character')).length === 0 && (
+                      </div>
+                      {sorted.length === 0 && (
                           <div className="text-center text-gray-400 py-12 text-sm">暂无可用预设</div>
                       )}
                   </div>
               </div>
           </div>
-      )}
+          );
+      })()}
 
       {/* Import Detail/Confirm Modal */}
       {importCandidate && (
