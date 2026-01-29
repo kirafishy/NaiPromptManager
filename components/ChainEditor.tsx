@@ -53,9 +53,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     // Detailed Import Config State
     const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
     const [importOptions, setImportOptions] = useState({
-        importPrompt: true,      // Base Prompt + Subject Prompt
+        importBasePrompt: true,  // Renamed from importPrompt
+        importSubject: true,     // New: Subject Prompt
         importNegative: true,    // Negative Prompt
         importModules: true,     // Modules array
+        appendModules: false,    // New: Append Modules
         importCharacters: true,  // Characters params
         appendCharacters: false, // Append Characters (if false, replace)
         importSettings: true,    // Resolution, Steps, Scale, Sampler...
@@ -232,15 +234,21 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     // --- Smart Import Logic ---
     const initiateImport = (c: PromptChain) => {
         setImportCandidate(c);
-        // Default: Check all compatible, but maybe not Append Characters by default
+
+        // Determine type-based defaults
+        const isTargetChar = c.type === 'character';
+
+        // Default options based on target type
         setImportOptions({
-            importPrompt: true,
-            importNegative: true,
-            importModules: true,
-            importCharacters: c.params?.characters && c.params.characters.length > 0 ? true : false,
-            appendCharacters: false, // Default replace
-            importSettings: true,
-            importSeed: true,
+            importBasePrompt: !isTargetChar,     // Artist: Checked, Char: Unchecked (per Rule 6 & 5)
+            importSubject: isTargetChar,         // Char: Checked, Artist: Unchecked (per Rule 5 & 6)
+            importNegative: false,               // Both: Unchecked (Rule 5 & 6 say "others unchecked")
+            importModules: !isTargetChar,        // Artist: Checked, Char: Unchecked
+            appendModules: false,                // Both: Unchecked
+            importCharacters: isTargetChar,      // Char: Checked, Artist: Unchecked
+            appendCharacters: false,
+            importSettings: !isTargetChar,       // Artist: Checked, Char: Unchecked
+            importSeed: false,                   // Both: Unchecked
         });
     };
 
@@ -249,9 +257,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         const target = importCandidate;
 
         // 1. Prompt (Base + Subject)
-        if (importOptions.importPrompt) {
+        if (importOptions.importBasePrompt) {
             if (target.basePrompt) setBasePrompt(target.basePrompt);
-            // If source has subject in vars, import it
+        }
+        if (importOptions.importSubject) {
             const targetSubject = target.variableValues?.['subject'] || '';
             if (targetSubject) setSubjectPrompt(targetSubject);
         }
@@ -263,18 +272,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
         // 3. Modules
         if (importOptions.importModules && target.modules && target.modules.length > 0) {
-            // Always Append for now as "Modules" implies add-ons? 
-            // Actually user said "Modules" checkbox. Usually we might want to replace or append.
-            // Let's assume Append for modules to be safe, or just Replace?
-            // Previous logic had "mergeModules". Let's assume Append is safer for modules to avoid losing existing structure.
-            // BUT, if I import a full preset, I might want to replace.
-            // Let's stick to: Modules are appended.
             const newModules = target.modules.map(m => ({ ...m, id: crypto.randomUUID() }));
-            setModules(prev => [...prev, ...newModules]); // Append
 
-            const newActive = { ...activeModules };
-            newModules.forEach(m => newActive[m.id] = m.isActive);
-            setActiveModules(newActive);
+            if (importOptions.appendModules) {
+                setModules(prev => [...prev, ...newModules]); // Append
+            } else {
+                setModules(newModules); // Replace
+            }
+
+            // Update active state
+            setActiveModules(prev => {
+                const next = importOptions.appendModules ? { ...prev } : {};
+                newModules.forEach(m => next[m.id] = m.isActive);
+                return next;
+            });
         }
 
         // 4. Characters
@@ -903,7 +914,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
                     {/* Save Footer: fixed on mobile so always visible, sticky in left panel on lg */}
                     {isOwner && (
-                        <div className="fixed bottom-0 left-0 right-0 lg:sticky lg:left-auto lg:right-auto lg:bottom-0 z-30 w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transition-transform duration-300">
+                        <div className="fixed bottom-0 left-0 right-0 lg:sticky lg:left-auto lg:right-auto lg:bottom-0 z-50 w-full p-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shadow-lg transition-transform duration-300">
                             <div className="text-xs text-gray-500 ml-2">
                                 {hasChanges ? <span className="text-yellow-600 dark:text-yellow-500 font-medium">⚠️ 未保存</span> : <span className="text-green-600 dark:text-green-500">✅ 已保存</span>}
                             </div>
@@ -1012,19 +1023,32 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         </div>
                         <div className="p-5 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importPrompt} onChange={e => setImportOptions({ ...importOptions, importPrompt: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">提示词 (Prompt)</span>
+                                <input type="checkbox" checked={importOptions.importBasePrompt} onChange={e => setImportOptions({ ...importOptions, importBasePrompt: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">1. 基础画风 (Base Style)</span>
+                            </label>
+
+                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input type="checkbox" checked={importOptions.importSubject} onChange={e => setImportOptions({ ...importOptions, importSubject: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                <span className="text-sm font-medium dark:text-gray-200">主体提示词 (Subject)</span>
                             </label>
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importNegative} onChange={e => setImportOptions({ ...importOptions, importNegative: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">负面提示词 (Undesired Content)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">负面提示词 (NC)</span>
                             </label>
 
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">增强模块 (Modules)</span>
-                            </label>
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-3 cursor-pointer select-none">
+                                    <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                    <span className="text-sm font-medium dark:text-gray-200">增强模块 (Modules)</span>
+                                </label>
+                                {importOptions.importModules && (
+                                    <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
+                                        <input type="checkbox" checked={importOptions.appendModules} onChange={e => setImportOptions({ ...importOptions, appendModules: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加 (Append)</span>
+                                    </label>
+                                )}
+                            </div>
 
                             <div className="space-y-2">
                                 <label className="flex items-center gap-3 cursor-pointer select-none">
