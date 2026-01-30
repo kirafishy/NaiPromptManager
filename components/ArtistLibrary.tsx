@@ -439,13 +439,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 const seed = config.seed;
 
                 // Generate
-                const base64Img = await generateImage(apiKey, prompt, negative, {
+                const result = await generateImage(apiKey, prompt, negative, {
                     width: 832, height: 1216, steps: config.steps, scale: config.scale, sampler: 'k_euler_ancestral', seed: seed,
                     qualityToggle: true, ucPreset: 0
                 });
 
                 // Compress before upload (Save Space!)
-                const compressedImg = await compressImage(base64Img, 0.8);
+                const compressedImg = await compressImage(result.image, 0.8);
 
                 // Construct update payload
                 // Fetch FRESH benchmarks from current state to avoid overwrites if multiple tasks ran
@@ -794,8 +794,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                         {/* Queue / Log Button */}
                         {(taskQueue.length > 0 || failedTasks.length > 0 || logs.length > 0) && (
                             <div className={`flex items-center gap-1 px-2 py-1 rounded border cursor-pointer select-none transition-colors ${failedTasks.length > 0
-                                    ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
-                                    : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800'
+                                ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
+                                : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800'
                                 }`}
                                 onClick={() => setShowLogs(true)}
                                 title="点击查看生成日志"
@@ -839,8 +839,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                             onClick={() => setShowFavOnly(!showFavOnly)}
                             title="收藏"
                             className={`h-8 px-3 rounded-full border flex items-center transition-colors text-sm ${showFavOnly
-                                    ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-500'
-                                    : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-400'
+                                ? 'bg-yellow-50 border-yellow-300 text-yellow-600 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-500'
+                                : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-400'
                                 }`}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
@@ -1189,8 +1189,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                             {logs.length === 0 && <div className="text-center text-gray-400 py-4 text-xs">暂无日志</div>}
                             {logs.map((log, i) => (
                                 <div key={i} className={`p-2 rounded text-xs font-mono border ${log.type === 'error' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400' :
-                                        log.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/50 text-green-600 dark:text-green-400' :
-                                            'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                                    log.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/50 text-green-600 dark:text-green-400' :
+                                        'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
                                     }`}>
                                     <span className="opacity-50 mr-2">[{log.time}]</span>
                                     {log.message}
