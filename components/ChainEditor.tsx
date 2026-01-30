@@ -258,11 +258,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
         // 1. Prompt (Base + Subject)
         if (importOptions.importBasePrompt) {
-            if (target.basePrompt) setBasePrompt(target.basePrompt);
+            setBasePrompt(target.basePrompt || '');
         }
         if (importOptions.importSubject) {
             const targetSubject = target.variableValues?.['subject'] || '';
-            if (targetSubject) setSubjectPrompt(targetSubject);
+            setSubjectPrompt(targetSubject);
         }
 
         // 2. Negative
