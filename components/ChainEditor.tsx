@@ -238,13 +238,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
 
         // Determine type-based defaults
         const isTargetChar = c.type === 'character';
+        const hasModules = c.modules && c.modules.length > 0;
 
         // Default options based on target type
         setImportOptions({
             importBasePrompt: !isTargetChar,     // Artist: Checked, Char: Unchecked (per Rule 6 & 5)
             importSubject: isTargetChar,         // Char: Checked, Artist: Unchecked (per Rule 5 & 6)
-            importNegative: false,               // Both: Unchecked (Rule 5 & 6 say "others unchecked")
-            importModules: !isTargetChar,        // Artist: Checked, Char: Unchecked
+            importNegative: !isTargetChar,       // Artist: Checked, Char: Unchecked
+            importModules: hasModules,           // Both: Checked only if modules exist
             appendModules: false,                // Both: Unchecked
             importCharacters: isTargetChar,      // Char: Checked, Artist: Unchecked
             appendCharacters: false,
@@ -717,7 +718,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         <section>
                             <div className="flex justify-between items-end mb-2">
                                 <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">
-                                    1. 基础画风
+                                    基础画风
                                 </label>
 
                                 {/* Import & Load Preset Buttons */}
@@ -1052,28 +1053,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         <div className="p-5 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importBasePrompt} onChange={e => setImportOptions({ ...importOptions, importBasePrompt: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">1. 基础画风 (Base Style)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">基础画风</span>
                             </label>
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importSubject} onChange={e => setImportOptions({ ...importOptions, importSubject: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">主体提示词 (Subject)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">主体提示词</span>
                             </label>
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importNegative} onChange={e => setImportOptions({ ...importOptions, importNegative: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">负面提示词 (NC)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">负面提示词</span>
                             </label>
 
                             <div className="space-y-2">
                                 <label className="flex items-center gap-3 cursor-pointer select-none">
                                     <input type="checkbox" checked={importOptions.importModules} onChange={e => setImportOptions({ ...importOptions, importModules: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                    <span className="text-sm font-medium dark:text-gray-200">增强模块 (Modules)</span>
+                                    <span className="text-sm font-medium dark:text-gray-200">增强模块</span>
                                 </label>
                                 {importOptions.importModules && (
                                     <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
                                         <input type="checkbox" checked={importOptions.appendModules} onChange={e => setImportOptions({ ...importOptions, appendModules: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加 (Append)</span>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加</span>
                                     </label>
                                 )}
                                 {importOptions.importModules && importCandidate.modules && importCandidate.modules.length > 0 && (
@@ -1102,24 +1103,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                             <div className="space-y-2">
                                 <label className="flex items-center gap-3 cursor-pointer select-none">
                                     <input type="checkbox" checked={importOptions.importCharacters} onChange={e => setImportOptions({ ...importOptions, importCharacters: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                    <span className="text-sm font-medium dark:text-gray-200">多角色管理 (Characters)</span>
+                                    <span className="text-sm font-medium dark:text-gray-200">多角色管理</span>
                                 </label>
                                 {importOptions.importCharacters && (
                                     <label className="flex items-center gap-3 cursor-pointer select-none pl-8">
                                         <input type="checkbox" checked={importOptions.appendCharacters} onChange={e => setImportOptions({ ...importOptions, appendCharacters: e.target.checked })} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加 (Append)</span>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">追加</span>
                                     </label>
                                 )}
                             </div>
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importSettings} onChange={e => setImportOptions({ ...importOptions, importSettings: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">生成参数 (Settings)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">生成参数</span>
                             </label>
 
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={importOptions.importSeed} onChange={e => setImportOptions({ ...importOptions, importSeed: e.target.checked })} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
-                                <span className="text-sm font-medium dark:text-gray-200">种子 (Seed)</span>
+                                <span className="text-sm font-medium dark:text-gray-200">种子</span>
                             </label>
                         </div>
                         <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
