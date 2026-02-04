@@ -15,7 +15,7 @@ interface ChainEditorProps {
     currentUser: User;
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => void;
     onBack: () => void;
-    onFork: (chain: PromptChain) => void;
+    onFork: (chain: PromptChain, targetType?: 'style' | 'character') => void;
     setIsDirty: (isDirty: boolean) => void;
     notify: (msg: string, type?: 'success' | 'error') => void;
 }
@@ -97,6 +97,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const importInputRef = useRef<HTMLInputElement>(null);
+    const [showForkModal, setShowForkModal] = useState(false);
 
     // --- Initialization ---
 
@@ -524,6 +525,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     };
 
     const handleFork = () => {
+        setShowForkModal(true);
+    };
+
+    const confirmFork = (targetType: 'style' | 'character') => {
         const updatedModules = modules.map(m => ({
             ...m,
             isActive: activeModules[m.id] ?? true
@@ -535,7 +540,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
             modules: updatedModules,
             params,
             variableValues: { 'subject': subjectPrompt }
-        });
+        }, targetType);
+        setShowForkModal(false);
     };
 
     const toggleModuleActive = (id: string) => {
@@ -1150,6 +1156,36 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                             <button onClick={() => setImportCandidate(null)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors">取消</button>
                             <button onClick={confirmImport} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded shadow-lg shadow-indigo-500/20 transition-all">导入</button>
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* Fork Type Selection Modal */}
+            {showForkModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-700 p-6">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">选择保存类型</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button
+                                onClick={() => confirmFork('style')}
+                                className="flex flex-col items-center justify-center p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors gap-2"
+                            >
+                                <span className="text-2xl">🎨</span>
+                                <span className="font-bold text-blue-700 dark:text-blue-300">画师/风格串</span>
+                            </button>
+                            <button
+                                onClick={() => confirmFork('character')}
+                                className="flex flex-col items-center justify-center p-4 rounded-lg bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
+                            >
+                                <span className="text-2xl">👤</span>
+                                <span className="font-bold text-pink-700 dark:text-pink-300">角色串</span>
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setShowForkModal(false)}
+                            className="mt-6 w-full py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white text-sm font-medium"
+                        >
+                            取消
+                        </button>
                     </div>
                 </div>
             )}

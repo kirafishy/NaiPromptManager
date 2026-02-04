@@ -206,13 +206,14 @@ const App = () => {
     handleNavigate('edit', newId);
   };
 
-  const handleForkChain = async (chain: PromptChain) => {
-    const name = chain.name + ' (Fork)';
-    await db.createChain(name, chain.description, chain, chain.type); // Persist type on fork
+  const handleForkChain = async (chain: PromptChain, targetType?: ChainType) => {
+    const finalType = targetType || chain.type;
+    const name = chain.name + (chain.id === 'playground' ? '' : ' (Fork)');
+    await db.createChain(name, chain.description, chain, finalType); // Persist type on fork
     notify('Fork 成功！已保存到您的列表');
     await refreshData(true);
     // Return to appropriate list based on type
-    setView(chain.type === 'character' ? 'characters' : 'list');
+    setView(finalType === 'character' ? 'characters' : 'list');
   };
 
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
