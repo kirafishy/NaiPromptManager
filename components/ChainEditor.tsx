@@ -757,7 +757,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         <section>
                             <div className="flex justify-between items-end mb-2">
                                 <label className="block text-sm font-semibold text-indigo-500 dark:text-indigo-400">
-                                    基础画风
+                                    基础画风（画师串）
                                 </label>
 
                                 {/* Import & Load Preset Buttons */}
