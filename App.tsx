@@ -351,6 +351,7 @@ const App = () => {
           artistsData={artistsCache}
           onRefresh={() => loadArtists(true)}
           notify={notify}
+          currentUser={currentUser}
         />;
       case 'inspiration':
         return <InspirationGallery
