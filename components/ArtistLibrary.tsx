@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Artist } from '../types';
+import { Artist, User } from '../types';
 import { generateImage } from '../services/naiService'; // Import generation service
 import { api } from '../services/api'; // Import api for updating
 import { db } from '../services/dbService'; // Import DB to fetch config
@@ -19,6 +19,7 @@ interface ArtistLibraryProps {
     artistsData: Artist[] | null;
     onRefresh: () => Promise<void>;
     notify: (msg: string, type?: 'success' | 'error') => void;
+    currentUser?: User | null; // Add current user prop for permission check
 }
 
 // Helper to get first char
@@ -144,7 +145,7 @@ interface LogEntry {
     type: 'success' | 'error' | 'info';
 }
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme, artistsData, onRefresh, notify }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleTheme, artistsData, onRefresh, notify, currentUser }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -179,6 +180,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [config, setConfig] = useState<BenchmarkConfig>(DEFAULT_BENCHMARK_CONFIG);
 
     const [apiKey, setApiKey] = useState('');
+    
+    // Check if current user is admin
+    const isAdmin = currentUser?.role === 'admin';
 
     // Queue System
     const [taskQueue, setTaskQueue] = useState<GenTask[]>([]);
@@ -776,8 +780,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
                     {/* Settings Group */}
                     <div className="flex gap-2 items-center ml-auto">
-                        {/* Auto-Fill Button */}
-                        {(layoutMode === 'list' || viewMode === 'benchmark') && apiKey && (
+                        {/* Auto-Fill Button - Only show for admins */}
+                        {isAdmin && (layoutMode === 'list' || viewMode === 'benchmark') && apiKey && (
                             <button
                                 onClick={queueMissingGenerations}
                                 title={layoutMode === 'list'
@@ -948,7 +952,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                                             </button>
 
-                                            {viewMode === 'benchmark' && apiKey && (
+                                            {isAdmin && viewMode === 'benchmark' && apiKey && (
                                                 <>
                                                     <button
                                                         onClick={(e) => queueGeneration(artist, [activeSlot], e)}
@@ -998,12 +1002,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                     key={artist.id}
                                     id={isAnchor ? `anchor-${currChar}` : undefined}
                                     className={`bg-white dark:bg-gray-800 rounded-xl border p-4 shadow-sm ${isSelected ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500' : 'border-gray-200 dark:border-gray-700'}`}
+                                    onClick={() => toggleCart(artist.name)}
                                 >
                                     <div className="flex justify-between items-center mb-3">
                                         <div className="flex items-center gap-3">
                                             <h3
                                                 className={`font-bold text-lg md:text-xl cursor-pointer hover:underline ${isSelected ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}
-                                                onClick={() => toggleCart(artist.name)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleCart(artist.name);
+                                                }}
                                             >
                                                 {artist.name}
                                             </h3>
@@ -1014,7 +1022,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                                             </a>
                                         </div>
-                                        {apiKey && (
+                                        {isAdmin && apiKey && (
                                             <button
                                                 onClick={(e) => queueGeneration(artist, config.slots.map((_, i) => i), e)}
                                                 className="text-xs bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded hover:bg-green-100 dark:hover:bg-green-900/50 flex items-center gap-1 border border-green-200 dark:border-green-800"
@@ -1071,7 +1079,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                                                                 )}
                                                             </div>
                                                         )}
-                                                        {apiKey && !taskRunning && !taskPending && (
+                                                        {isAdmin && apiKey && !taskRunning && !taskPending && (
                                                             <div className="absolute bottom-1 right-1 transition-opacity opacity-0 group-hover:opacity-100 z-10">
                                                                 <button
                                                                     onClick={(e) => queueGeneration(artist, [i], e)}
