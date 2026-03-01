@@ -171,14 +171,21 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       setClearingLogs(false);
   };
 
-  // 格式化日期时间
-  const formatDateTime = (timestamp: number) => {
-      return new Date(timestamp).toLocaleString('zh-CN', {
+  // 格式化日期时间（包含时间）
+  const formatDateTime = (timestamp: number | string) => {
+      if (!timestamp || isNaN(Number(timestamp))) return '未知';
+      return new Date(Number(timestamp)).toLocaleString('zh-CN', {
           month: '2-digit',
           day: '2-digit',
           hour: '2-digit',
           minute: '2-digit'
       });
+  };
+
+  // 格式化日期（仅日期）
+  const formatDate = (timestamp: number | string) => {
+      if (!timestamp || isNaN(Number(timestamp))) return '未知';
+      return new Date(Number(timestamp)).toLocaleDateString('zh-CN');
   };
 
   const handleUpdateGuestCode = async () => {
@@ -410,7 +417,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                                 <tr key={u.id} className="border-b dark:border-gray-700 last:border-0 dark:text-white">
                                     <td className="p-4">{u.username}</td>
                                     <td className="p-4"><span className={`px-2 py-1 rounded text-xs ${u.role === 'admin' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{u.role}</span></td>
-                                    <td className="p-4 text-sm text-gray-500">{new Date(u.createdAt).toLocaleDateString()}</td>
+                                    <td className="p-4 text-sm text-gray-500">{formatDate(u.createdAt)}</td>
                                     <td className="p-4">
                                         {u.id !== currentUser.id && u.role !== 'guest' && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500">删除</button>}
                                     </td>
