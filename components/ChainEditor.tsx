@@ -50,7 +50,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
     // --- Import Preset Modal State ---
-    const [showImportPreset, setShowImportPreset] = useState(false);
     // New state for import modal search and tags
     const [importModalSearch, setImportModalSearch] = useState('');
     const [importModalSelectedTags, setImportModalSelectedTags] = useState<Set<string>>(new Set());
