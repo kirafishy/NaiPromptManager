@@ -79,6 +79,8 @@ class DBService {
 
       // Copy variable values as well to preserve the subject
       payload.variableValues = copyFrom.variableValues;
+      // Copy tags from the source chain
+      payload.tags = copyFrom.tags || [];
     } else {
       // Create Default Modules for new chain
       payload.modules = [];
@@ -86,6 +88,8 @@ class DBService {
       // Default Subject for NEW chains is '1girl'.
       // User can clear this in editor (it will save as "" string), avoiding forced reset.
       payload.variableValues = { subject: '1girl' };
+      // Initialize with empty tags
+      payload.tags = [];
     }
     const res = await api.post('/chains', payload);
     return res.id;

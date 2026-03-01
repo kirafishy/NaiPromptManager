@@ -33,6 +33,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     // --- Chain Info State ---
     const [chainName, setChainName] = useState(chain.name);
     const [chainDesc, setChainDesc] = useState(chain.description);
+    const [chainTags, setChainTags] = useState<string[]>(chain.tags || []);
     const [isEditingInfo, setIsEditingInfo] = useState(false);
 
     // --- Prompt State ---
@@ -49,6 +50,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
     // --- Import Preset Modal State ---
+    const [showImportPreset, setShowImportPreset] = useState(false);
+    // New state for import modal search and tags
+    const [importModalSearch, setImportModalSearch] = useState('');
+    const [importModalSelectedTags, setImportModalSelectedTags] = useState<Set<string>>(new Set());
     const [showImportPreset, setShowImportPreset] = useState(false);
     // Detailed Import Config State
     const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
@@ -129,6 +134,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         });
         setChainName(chain.name);
         setChainDesc(chain.description);
+        setChainTags(chain.tags || []);
 
         // Default subject to empty, not '1girl'
         const savedVars = chain.variableValues || {};
@@ -513,6 +519,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         onUpdateChain(chain.id, {
             name: chainName,
             description: chainDesc,
+            tags: chainTags,
             basePrompt,
             negativePrompt,
             modules: updatedModules,
@@ -552,6 +559,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
         }));
         onFork({
             ...chain,
+            tags: chainTags,
             basePrompt,
             negativePrompt,
             modules: updatedModules,
@@ -671,6 +679,54 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                 >
                                     确定
                                 </button>
+                            </div>
+                            {/* Tags Input */}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {chainTags.map((tag, idx) => (
+                                <span key={idx} className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 flex items-center gap-1">
+                                  {tag}
+                                  {canEdit && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setChainTags(chainTags.filter((_, i) => i !== idx));
+                                        markChange();
+                                      }}
+                                      className="text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </span>
+                              ))}
+                              {canEdit && (
+                                <input
+                                  type="text"
+                                  placeholder="添加标签..."
+                                  className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                      const newTag = e.currentTarget.value.trim();
+                                      if (!chainTags.includes(newTag)) {
+                                        setChainTags([...chainTags, newTag]);
+                                        markChange();
+                                      }
+                                      e.currentTarget.value = '';
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (e.target.value.trim()) {
+                                      const newTag = e.target.value.trim();
+                                      if (!chainTags.includes(newTag)) {
+                                        setChainTags([...chainTags, newTag]);
+                                        markChange();
+                                      }
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                />
+                              )}
                             </div>
                         </div>
                     ) : (
@@ -1040,7 +1096,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0 gap-4">
                             <h3 className="font-bold dark:text-white flex-shrink-0">引用预设</h3>
 
-                            {/* Tabs */}
                             <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-lg flex-1 max-w-xs">
                                 <button
                                     onClick={() => setImportTab('style')}
@@ -1059,41 +1114,102 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                             <button onClick={() => setShowImportPreset(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 min-h-0">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                                {allChains
-                                    .filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)))
-                                    .sort((a, b) => {
-                                        const aFav = favorites.has(a.id); const bFav = favorites.has(b.id);
-                                        if (aFav && !bFav) return -1; if (!aFav && bFav) return 1; return 0;
-                                    })
-                                    .map(c => (
+                            {/* Extract all unique tags from the filtered list for this modal */}
+                            {(() => {
+                              const filteredForTags = allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type)));
+                              const allModalTags = Array.from(
+                                new Set(
+                                  filteredForTags.flatMap(chain => chain.tags || [])
+                                )
+                              ).sort();
+
+                              // Filter the list based on search and tags
+                              const filteredChains = filteredForTags
+                                .filter(c =>
+                                  (c.name.toLowerCase().includes(importModalSearch.toLowerCase()) ||
+                                   c.description.toLowerCase().includes(importModalSearch.toLowerCase()))
+                                )
+                                .filter(c => {
+                                  if (importModalSelectedTags.size === 0) return true;
+                                  const chainTagSet = new Set(c.tags || []);
+                                  return Array.from(importModalSelectedTags).every(tag => chainTagSet.has(tag));
+                                })
+                                .sort((a, b) => {
+                                  const aFav = favorites.has(a.id); const bFav = favorites.has(b.id);
+                                  if (aFav && !bFav) return -1; if (!aFav && bFav) return 1; return 0;
+                                });
+
+                              return (
+                                <>
+                                  {/* Search Input for Modal */}
+                                  <div className="flex gap-2 w-full mb-4">
+                                    <input
+                                      type="text"
+                                      placeholder="搜索预设..."
+                                      className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                      value={importModalSearch}
+                                      onChange={(e) => setImportModalSearch(e.target.value)}
+                                    />
+                                  </div>
+                                  {/* Tag Filter Bar for Modal */}
+                                  {allModalTags.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 p-2 bg-gray-100 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 mb-4 max-h-20 overflow-y-auto">
+                                      {allModalTags.map(tag => (
                                         <button
-                                            key={c.id}
-                                            type="button"
-                                            onClick={() => initiateImport(c)}
-                                            className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 bg-white dark:bg-gray-800/80 overflow-hidden text-left transition-colors"
+                                          key={tag}
+                                          type="button"
+                                          onClick={() => {
+                                            const newSelected = new Set(importModalSelectedTags);
+                                            if (newSelected.has(tag)) {
+                                              newSelected.delete(tag);
+                                            } else {
+                                              newSelected.add(tag);
+                                            }
+                                            setImportModalSelectedTags(newSelected);
+                                          }}
+                                          className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                                            importModalSelectedTags.has(tag)
+                                              ? 'bg-indigo-600 text-white'
+                                              : 'bg-white dark:bg-gray-600 text-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-500'
+                                          }`}
                                         >
-                                            <div className="aspect-square w-full bg-black/5 dark:bg-black/20 flex-shrink-0 relative">
-                                                {c.previewImage ? (
-                                                    <img src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-contain" />
-                                                ) : (
-                                                    <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">无图</div>
-                                                )}
-                                                {favorites.has(c.id) && (
-                                                    <span className="absolute top-1 right-1 text-amber-500 text-lg drop-shadow-md" title="已收藏">★</span>
-                                                )}
-                                            </div>
-                                            <div className="p-2 flex-1 min-h-0 flex flex-col">
-                                                <div className="font-semibold text-sm dark:text-gray-200 truncate">{c.name}</div>
-                                                <div className="text-xs text-gray-500 truncate mt-0.5 flex-1">{c.description || '无描述'}</div>
-                                                <span className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">选择</span>
-                                            </div>
+                                          {tag}
                                         </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                                    {filteredChains.map(c => (
+                                      <button
+                                        key={c.id}
+                                        type="button"
+                                        onClick={() => initiateImport(c)}
+                                        className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 bg-white dark:bg-gray-800/80 overflow-hidden text-left transition-colors"
+                                      >
+                                        <div className="aspect-square w-full bg-black/5 dark:bg-black/20 flex-shrink-0 relative">
+                                          {c.previewImage ? (
+                                            <img src={c.previewImage} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                                          ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">无图</div>
+                                          )}
+                                          {favorites.has(c.id) && (
+                                            <span className="absolute top-1 right-1 text-amber-500 text-lg drop-shadow-md" title="已收藏">★</span>
+                                          )}
+                                        </div>
+                                        <div className="p-2 flex-1 min-h-0 flex flex-col">
+                                          <div className="font-semibold text-sm dark:text-gray-200 truncate">{c.name}</div>
+                                          <div className="text-xs text-gray-500 truncate mt-0.5 flex-1">{c.description || '无描述'}</div>
+                                          <span className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">选择</span>
+                                        </div>
+                                      </button>
                                     ))}
-                            </div>
-                            {allChains.filter(c => (importTab === 'character' ? c.type === 'character' : (c.type === 'style' || !c.type))).length === 0 && (
-                                <div className="text-center text-gray-400 py-12 text-sm">暂无此类预设</div>
-                            )}
+                                  </div>
+                                  {filteredChains.length === 0 && (
+                                    <div className="text-center text-gray-400 py-12 text-sm">暂无匹配的预设</div>
+                                  )}
+                                </>
+                              );
+                            })()}
                         </div>
                     </div>
                 </div>

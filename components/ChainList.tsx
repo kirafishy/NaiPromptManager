@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PromptChain, ChainType } from '../types';
 
 interface ChainListProps {
@@ -148,6 +148,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -193,32 +194,50 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setNewDesc('');
   };
 
-  // Filter chains by Type (style or character), search term, and favorites (optional)
-  const filteredChains = chains
-    .filter(c => 
-      (c.type === type || (!c.type && type === 'style')) && // Backward compat: default to style if no type
-      (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-       c.description.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
-    .filter(c => !favOnly || favorites.has(c.id))
-    .slice()
-    .sort((a, b) => {
-      const ca = a.createdAt || 0;
-      const cb = b.createdAt || 0;
-      const ua = a.updatedAt || ca;
-      const ub = b.updatedAt || cb;
-      switch (sortOption) {
-        case 'created_asc':
-          return ca - cb;
-        case 'created_desc':
-          return cb - ca;
-        case 'updated_asc':
-          return ua - ub;
-        case 'updated_desc':
-        default:
-          return ub - ua;
-      }
-    });
+  // Memoize allTags extraction
+  const allTags = useMemo(() => {
+    return Array.from(
+      new Set(
+        chains.flatMap(chain => chain.tags || [])
+      )
+    ).sort();
+  }, [chains]);
+
+  // Filter chains by Type, search term, favorites, and selected tags
+  const filteredChains = useMemo(() => {
+    return chains
+      .filter(c =>
+        (c.type === type || (!c.type && type === 'style')) && // Backward compat: default to style if no type
+        (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         c.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+      .filter(c => !favOnly || favorites.has(c.id))
+      .filter(c => {
+        // If no tags are selected, show all
+        if (selectedTags.size === 0) return true;
+        // Check if the chain has ALL the selected tags (AND logic)
+        const chainTagSet = new Set(c.tags || []);
+        return Array.from(selectedTags).every(tag => chainTagSet.has(tag));
+      })
+      .slice()
+      .sort((a, b) => {
+        const ca = a.createdAt || 0;
+        const cb = b.createdAt || 0;
+        const ua = a.updatedAt || ca;
+        const ub = b.updatedAt || cb;
+        switch (sortOption) {
+          case 'created_asc':
+            return ca - cb;
+          case 'created_desc':
+            return cb - ca;
+          case 'updated_asc':
+            return ua - ub;
+          case 'updated_desc':
+          default:
+            return ub - ua;
+        }
+      });
+  }, [chains, type, searchTerm, favOnly, favorites, selectedTags, sortOption]);
 
   const title = type === 'character' ? '我的角色串' : '我的画师串';
   const subtitle = type === 'character' ? '管理角色外观、服装与特征预设。' : '管理并迭代你的 NovelAI 提示词风格组合。';
@@ -241,14 +260,42 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 >
                     <svg className={`w-6 h-6 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
-                <input 
-                    type="text" 
-                    placeholder="搜索..." 
+                <input
+                    type="text"
+                    placeholder="搜索..."
                     className="w-full md:w-64 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
              </div>
+             {/* Tag Filter Bar */}
+             {allTags.length > 0 && (
+               <div className="flex flex-wrap gap-2 p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 max-h-20 overflow-y-auto">
+                 {allTags.map(tag => (
+                   <button
+                     key={tag}
+                     type="button"
+                     aria-pressed={selectedTags.has(tag)}
+                     onClick={() => {
+                       const newSelected = new Set(selectedTags);
+                       if (newSelected.has(tag)) {
+                         newSelected.delete(tag);
+                       } else {
+                         newSelected.add(tag);
+                       }
+                       setSelectedTags(newSelected);
+                     }}
+                     className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                       selectedTags.has(tag)
+                         ? 'bg-indigo-600 text-white'
+                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                     }`}
+                   >
+                     {tag}
+                   </button>
+                 ))}
+               </div>
+             )}
              {/* Sort & Favorite Controls */}
              <div className="flex gap-2 w-full md:w-auto items-center">
                 <select

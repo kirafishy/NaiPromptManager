@@ -607,7 +607,15 @@ export default {
         const body = await request.json() as any;
         const id = crypto.randomUUID();
         const type = body.type || 'style'; // Default to style
-        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, '[]', null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', Date.now(), Date.now()).run();
+        // Sanitize and validate tags
+        let tags = '[]';
+        if (Array.isArray(body.tags)) {
+          const sanitizedTags = body.tags
+            .map(tag => typeof tag === 'string' ? tag.trim().substring(0, 50) : '')
+            .filter(tag => tag.length > 0);
+          tags = JSON.stringify(sanitizedTags);
+        }
+        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', Date.now(), Date.now()).run();
         return json({ id });
       }
       const chainIdMatch = path.match(/^\/api\/chains\/([^\/]+)$/);
@@ -640,6 +648,7 @@ export default {
         if (updates.modules !== undefined) { fields.push('modules = ?'); values.push(JSON.stringify(updates.modules)); }
         if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
         if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
+        if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
         if (fields.length > 0) { fields.push('updated_at = ?'); values.push(Date.now()); values.push(id); await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         return json({ success: true });
       }
