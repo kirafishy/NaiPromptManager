@@ -223,10 +223,9 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
   const formatDateTime = (timestamp: number | string) => {
       if (!timestamp || isNaN(Number(timestamp))) return '未知';
       return new Date(Number(timestamp)).toLocaleString('zh-CN', {
+          year: 'numeric',
           month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
+          day: '2-digit'
       });
   };
 
