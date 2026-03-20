@@ -40,7 +40,9 @@ class DBService {
   }
 
   async getUsers(): Promise<User[]> {
-    return await api.get('/users');
+    const res = await api.get('/users');
+    // 兼容后端返回的分页格式 {data: [...], pagination: {...}}
+    return Array.isArray(res) ? res : (res.data || []);
   }
 
   async deleteUser(id: string): Promise<void> {

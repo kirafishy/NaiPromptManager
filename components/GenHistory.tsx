@@ -135,7 +135,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify }) =
         if (confirm('确定删除这张图片记录吗？(无法恢复)')) {
             await localHistory.delete(id);
             if (lightbox?.id === id) setLightbox(null);
-            loadData();
+            loadData(true);
         }
     };
 
