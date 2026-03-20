@@ -57,7 +57,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify }) =
         // 基础字段大小估算
         const baseSize = 100; // id, createdAt等基础字段
         const promptSize = (item.prompt?.length || 0) * 2; // UTF-16编码
-        const imageUrlSize = (item.imageUrl?.length || 0) * 2;
+        // base64 图片通常是 ASCII 字符（1字节/字符），不是 UTF-16
+        const imageUrlSize = (item.imageUrl?.length || 0) * 1;
         const paramsSize = JSON.stringify(item.params || {}).length * 2;
         return baseSize + promptSize + imageUrlSize + paramsSize;
     };
@@ -228,7 +229,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify }) =
                             </svg>
                         </button>
                         {showCleanMenu && (
-                            <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20">
+                            <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                                 <button 
                                     onClick={handleClearAll} 
                                     className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 rounded-t-lg"

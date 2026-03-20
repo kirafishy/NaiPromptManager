@@ -583,17 +583,38 @@ export default {
       }
       if (path === '/api/users' && method === 'GET') {
           if (currentUser.role !== 'admin') return error('Forbidden', 403);
-          const res = await db.prepare('SELECT id, username, role, created_at, last_login, storage_usage, max_storage FROM users ORDER BY created_at DESC').all();
+          
+          // 支持分页参数
+          const page = parseInt(url.searchParams.get('page') || '0');
+          const pageSize = Math.min(parseInt(url.searchParams.get('pageSize') || '50'), 100); // 最大100条
+          const offset = page * pageSize;
+          
+          // 获取总数
+          const countResult = await db.prepare('SELECT COUNT(*) as total FROM users').first<{total: number}>();
+          const total = countResult?.total || 0;
+          
+          // 分页查询
+          const res = await db.prepare('SELECT id, username, role, created_at, last_login, storage_usage, max_storage FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
+            .bind(pageSize, offset).all();
+          
           // 将数据库字段名（下划线）映射为前端字段名（驼峰）
-          return json(res.results.map((u: any) => ({
-              id: u.id,
-              username: u.username,
-              role: u.role,
-              createdAt: u.created_at,
-              lastLogin: u.last_login,
-              storageUsage: u.storage_usage,
-              maxStorage: u.max_storage
-          })));
+          return json({
+              data: res.results.map((u: any) => ({
+                  id: u.id,
+                  username: u.username,
+                  role: u.role,
+                  createdAt: u.created_at,
+                  lastLogin: u.last_login,
+                  storageUsage: u.storage_usage,
+                  maxStorage: u.max_storage
+              })),
+              pagination: {
+                  page,
+                  pageSize,
+                  total,
+                  totalPages: Math.ceil(total / pageSize)
+              }
+          });
       }
       if (path.startsWith('/api/users/') && method === 'DELETE') {
          if (currentUser.role !== 'admin') return error('Forbidden', 403);
@@ -607,25 +628,35 @@ export default {
          if (currentUser.role !== 'admin') return error('Forbidden', 403);
          const userId = path.split('/')[3];
          const { maxStorage } = await request.json() as any;
-         
+
          // 输入验证
          if (typeof maxStorage !== 'number' || maxStorage < 0) {
            return error('Invalid maxStorage value: must be a non-negative number', 400);
          }
-         
+
          // 设置合理的上限（100GB）
          const MAX_QUOTA_LIMIT = 100 * 1024 * 1024 * 1024; // 100GB
          if (maxStorage > MAX_QUOTA_LIMIT) {
            return error(`Invalid maxStorage value: exceeds maximum limit of 100GB`, 400);
          }
-         
-         // 验证用户是否存在
-         const targetUser = await db.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+
+         // 使用事务确保原子性：验证用户存在性 + 更新配额
+         const batchResults = await db.batch([
+           db.prepare('SELECT id FROM users WHERE id = ?').bind(userId),
+           db.prepare('UPDATE users SET max_storage = ? WHERE id = ?').bind(maxStorage, userId)
+         ]);
+
+         // 检查第一个查询结果：用户是否存在
+         const targetUser = batchResults[0].results?.[0];
          if (!targetUser) {
            return error('User not found', 404);
          }
-         
-         await db.prepare('UPDATE users SET max_storage = ? WHERE id = ?').bind(maxStorage, userId).run();
+
+         // 检查第二个查询结果：更新是否成功
+         if (!batchResults[1].success) {
+           return error('Failed to update quota', 500);
+         }
+
          return json({ success: true });
       }
 
