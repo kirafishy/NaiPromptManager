@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 
 interface ChainEditorPreviewProps {
     subjectPrompt: string;
@@ -35,6 +35,33 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     hideCoverActions
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    // 跨域图片下载：先 fetch 转 blob，再创建本地 URL 下载
+    const handleDownload = async (imageUrl: string, filename: string) => {
+        if (isDownloading) return;
+        setIsDownloading(true);
+        try {
+            const response = await fetch(imageUrl);
+            if (!response.ok) {
+                throw new Error(`下载失败: ${response.status}`);
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('下载失败:', error);
+            // 可选：这里可以添加 notify 提示用户下载失败
+        } finally {
+            setIsDownloading(false);
+        }
+    };
 
     return (
         <div className="w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 shrink-0">
@@ -73,7 +100,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         <>
                             <img src={generatedImage} alt="已生成" className="max-w-full max-h-full object-contain shadow-2xl" />
                             <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <a href={generatedImage} download={getDownloadFilename()} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs">下载</a>
+                                <button onClick={(e) => { e.stopPropagation(); handleDownload(generatedImage, getDownloadFilename()); }} disabled={isDownloading} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed">{isDownloading ? '下载中...' : '下载'}</button>
                                 {isOwner && !hideCoverActions && <button onClick={(e) => { e.stopPropagation(); handleSavePreview(); }} disabled={isUploading} className="bg-indigo-600/90 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">{isUploading ? '上传中...' : '设为封面'}</button>}
                             </div>
                         </>
@@ -85,7 +112,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">当前封面</span>
                                 </div>
                                 <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                    <a href={previewImage} download={getDownloadFilename()} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs text-center cursor-pointer pointer-events-auto">下载封面</a>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDownload(previewImage, getDownloadFilename()); }} disabled={isDownloading} className="bg-black/70 text-white px-3 py-1.5 rounded text-xs text-center cursor-pointer pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed">{isDownloading ? '下载中...' : '下载封面'}</button>
                                 </div>
                             </>
                         ) : <div className="text-gray-400 text-xs">预览区</div>
