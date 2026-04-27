@@ -37,16 +37,14 @@ function ensureDependencies() {
   }
 }
 
-function buildIfNeeded() {
-  if (!existsSync('dist') || !existsSync('dist/index.html')) {
-    console.log('\x1b[33m正在构建前端...\x1b[0m');
-    const buildCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
-    try {
-      execSync(`${buildCmd} run build`, { stdio: 'inherit', shell: IS_WINDOWS });
-    } catch {
-      console.error('\x1b[31m构建失败\x1b[0m');
-      process.exit(1);
-    }
+function buildLatest() {
+  console.log('\x1b[33m正在构建最新版本...\x1b[0m');
+  const buildCmd = IS_WINDOWS ? 'npm.cmd' : 'npm';
+  try {
+    execSync(`${buildCmd} run build`, { stdio: 'inherit', shell: IS_WINDOWS });
+  } catch {
+    console.error('\x1b[31m构建失败\x1b[0m');
+    process.exit(1);
   }
 }
 
@@ -85,5 +83,5 @@ function startServer() {
 console.log('\x1b[36m=== NaiPromptManager 本地部署 ===\x1b[0m');
 
 ensureDependencies();
-buildIfNeeded();
+buildLatest();
 startServer();
