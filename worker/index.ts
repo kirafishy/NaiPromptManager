@@ -1008,6 +1008,24 @@ export default {
             .run();
           return json({ success: true });
         } catch (e: any) {
+          if (e.message && e.message.includes('no column named')) {
+            await initDB();
+            try {
+              const body = await request.json() as any;
+              let imageUrl = body.imageUrl;
+              if (imageUrl && imageUrl.startsWith('data:')) { 
+                imageUrl = await processImageUpload(env, imageUrl, 'inspirations', body.id || crypto.randomUUID(), currentUser);
+              }
+              let paramsJson: string | null = null;
+              if (body.params) paramsJson = JSON.stringify(body.params);
+              await db.prepare('INSERT OR REPLACE INTO inspirations (id, user_id, username, title, image_url, prompt, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+                .bind(body.id, currentUser.id, currentUser.username, body.title, imageUrl, body.prompt, paramsJson, body.createdAt)
+                .run();
+              return json({ success: true });
+            } catch (retryError: any) {
+              return error(retryError.message || 'Database initialization failed', 500);
+            }
+          }
           console.error('POST /api/inspirations error:', e.message, e.stack);
           return error(e.message || 'Internal Server Error', 500);
         }
