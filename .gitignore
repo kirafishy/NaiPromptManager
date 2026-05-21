@@ -34,4 +34,4 @@ docs/plans/
 local-data/
 
 # Wrangler 本地缓存
-.wrangler/
+.wrangler/docs/db-field-addition-guide.md

@@ -70,6 +70,8 @@ export interface PromptChain {
   // New: Persist variable inputs (Now used for the single Subject/Variable prompt)
   variableValues?: Record<string, string>;
 
+  guestHidden?: boolean; // 游客不可见标记，默认 false
+
   createdAt: number;
   updatedAt: number;
 }

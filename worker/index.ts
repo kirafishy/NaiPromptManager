@@ -124,6 +124,7 @@ const INIT_SQL = `
     modules TEXT DEFAULT '[]',
     params TEXT DEFAULT '{}',
     variable_values TEXT DEFAULT '{}',
+    guest_hidden INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER,
     updated_at INTEGER
   );
@@ -164,6 +165,14 @@ function parseCookies(request: Request) {
     });
   }
   return cookies;
+}
+
+// Helper: 判断是否为缺失列错误（SQLite/D1 不同版本的报错格式）
+function isMissingColumnError(e: any): boolean {
+  if (!e || !e.message) return false;
+  const msg = e.message;
+  // SQLite 可能报 'no column named xxx' 或 'no such column: xxx'
+  return msg.includes('no column named') || msg.includes('no such column');
 }
 
 // Helper: 记录登录日志
@@ -374,6 +383,7 @@ export default {
       try { await db.prepare("ALTER TABLE artists ADD COLUMN preview_url TEXT").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE artists ADD COLUMN benchmarks TEXT DEFAULT '[]'").run(); } catch (e) {}
       try { await db.prepare("ALTER TABLE chains ADD COLUMN type TEXT DEFAULT 'style'").run(); } catch (e) {}
+      try { await db.prepare("ALTER TABLE chains ADD COLUMN guest_hidden INTEGER NOT NULL DEFAULT 0").run(); } catch (e) {}
       
 
       // 创建访问日志表
@@ -688,6 +698,8 @@ export default {
           }
       }
       if (path === '/api/users/password' && method === 'PUT') {
+          // Guest cannot change password (guest uses shared passcode, not personal password)
+          if (currentUser.role === 'guest') return error('Forbidden: Guest cannot change password', 403);
           const { password } = await request.json() as any;
           const hashedPassword = await bcrypt.hash(password, 10);
           await db.prepare('UPDATE users SET password = ? WHERE id = ?').bind(hashedPassword, currentUser.id).run();
@@ -808,13 +820,33 @@ export default {
 
       // Chains
       if (path === '/api/chains' && method === 'GET') {
-        const chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
+        // 游客不返回 guest_hidden=1 的记录
+        const isGuestUser = currentUser.role === 'guest';
+        let chainsResult;
+        try {
+          if (isGuestUser) {
+            chainsResult = await db.prepare('SELECT * FROM chains WHERE guest_hidden = 0 ORDER BY updated_at DESC').all();
+          } else {
+            chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
+          }
+        } catch (e: any) {
+          if (isMissingColumnError(e)) {
+            await initDB();
+            if (isGuestUser) {
+              chainsResult = await db.prepare('SELECT * FROM chains WHERE guest_hidden = 0 ORDER BY updated_at DESC').all();
+            } else {
+              chainsResult = await db.prepare('SELECT * FROM chains ORDER BY updated_at DESC').all();
+            }
+          } else {
+            throw e;
+          }
+        }
         const data = chainsResult.results.map((c: any) => ({
           id: c.id, userId: c.user_id, username: c.username, type: c.type || 'style', name: c.name, description: c.description,
           tags: JSON.parse(c.tags || '[]'), previewImage: c.preview_image, base_prompt: c.base_prompt, // raw DB column needed? No, mapping below
           basePrompt: c.base_prompt,
           negativePrompt: c.negative_prompt, modules: JSON.parse(c.modules || '[]'), params: JSON.parse(c.params || '{}'),
-          variableValues: JSON.parse(c.variable_values || '{}'), createdAt: c.created_at, updatedAt: c.updated_at
+          variableValues: JSON.parse(c.variable_values || '{}'), guestHidden: c.guest_hidden === 1, createdAt: c.created_at, updatedAt: c.updated_at
         }));
         return json(data);
       }
@@ -823,6 +855,7 @@ export default {
         const body = await request.json() as any;
         const id = crypto.randomUUID();
         const type = body.type || 'style'; // Default to style
+        const guestHidden = body.guestHidden ? 1 : 0;
         // Sanitize and validate tags
         let tags = '[]';
         if (Array.isArray(body.tags)) {
@@ -831,8 +864,17 @@ export default {
             .filter(tag => tag.length > 0);
           tags = JSON.stringify(sanitizedTags);
         }
-        await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', Date.now(), Date.now()).run();
-        return json({ id });
+        try {
+          await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+          return json({ id });
+        } catch (e: any) {
+          if (isMissingColumnError(e)) {
+            await initDB();
+            await db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, body.name, body.description, tags, null, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', body.params ? JSON.stringify(body.params) : '{}', body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, Date.now(), Date.now()).run();
+            return json({ id });
+          }
+          throw e;
+        }
       }
       const chainIdMatch = path.match(/^\/api\/chains\/([^\/]+)$/);
       if (chainIdMatch && method === 'PUT') {
@@ -865,7 +907,22 @@ export default {
         if (updates.params !== undefined) { fields.push('params = ?'); values.push(JSON.stringify(updates.params)); }
         if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
         if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
-        if (fields.length > 0) { fields.push('updated_at = ?'); values.push(Date.now()); values.push(id); await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
+        if (updates.guestHidden !== undefined) { fields.push('guest_hidden = ?'); values.push(updates.guestHidden ? 1 : 0); }
+        if (fields.length > 0) {
+          fields.push('updated_at = ?');
+          values.push(Date.now());
+          values.push(id);
+          try {
+            await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+          } catch (e: any) {
+            if (isMissingColumnError(e)) {
+              await initDB();
+              await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+            } else {
+              throw e;
+            }
+          }
+        }
         return json({ success: true });
       }
       if (chainIdMatch && method === 'DELETE') {
@@ -1009,7 +1066,7 @@ export default {
             .run();
           return json({ success: true });
         } catch (e: any) {
-          if (e.message && e.message.includes('no column named')) {
+          if (isMissingColumnError(e)) {
             await initDB();
             try {
               await db.prepare('INSERT OR REPLACE INTO inspirations (id, user_id, username, title, image_url, prompt, params, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')

@@ -37,6 +37,7 @@ CREATE TABLE chains (
   modules TEXT DEFAULT '[]',
   params TEXT DEFAULT '{}',
   variable_values TEXT DEFAULT '{}', -- 新增字段
+  guest_hidden INTEGER NOT NULL DEFAULT 0, -- 游客不可见标记
   created_at INTEGER,
   updated_at INTEGER
 );
