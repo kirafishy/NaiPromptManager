@@ -182,7 +182,13 @@ const App = () => {
         res = await db.login(loginUser, loginPass);
       }
       setCurrentUser(res.user);
-      refreshData();
+      // Force refresh chains to apply guest_hidden filter based on new role
+      refreshData(true);
+      // Guest should not stay in admin/profile view
+      if (res.user.role === 'guest' && (view === 'admin' || view === 'edit')) {
+        setView('list');
+        setSelectedId(undefined);
+      }
     } catch (err: any) {
       setLoginError(err.message || '登录失败');
     }
@@ -193,9 +199,14 @@ const App = () => {
     setCurrentUser(null);
     setLoginUser(''); setLoginPass(''); setGuestPasscode('');
     setIsGuestMode(false);
-    // Clear sensitive cache
+    // Clear all cache to prevent stale data after role switch
+    setChains([]);
+    setLastChainFetch(0);
     setUsersCache(null);
     setInspirationsCache(null);
+    // Reset view to list to prevent guest from staying in admin view
+    setView('list');
+    setSelectedId(undefined);
   };
 
   const handleCreateChain = async (name: string, desc: string, type: ChainType) => {
@@ -306,6 +317,21 @@ const App = () => {
   }
 
   const renderContent = () => {
+    // Guest guard for admin view - guest should never see admin panel
+    if (view === 'admin' && currentUser?.role === 'guest') {
+      return <ChainList
+        chains={chains}
+        type="style"
+        onCreate={handleCreateChain}
+        onSelect={(id) => handleNavigate('edit', id)}
+        onDelete={handleDelete}
+        onRefresh={() => refreshData(true)}
+        isLoading={loading}
+        notify={notify}
+        isGuest={true}
+      />;
+    }
+    
     switch (view) {
       case 'list':
         return <ChainList

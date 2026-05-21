@@ -701,18 +701,29 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
         {/* --- PROFILE TAB --- */}
         {activeTab === 'profile' && (
             <div className="space-y-6">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
-                    <h2 className="font-bold dark:text-white mb-4">修改密码</h2>
-                    <input type="password" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white mb-4" placeholder="新密码" />
-                    <button onClick={handleChangePassword} className="bg-indigo-600 text-white px-6 py-2 rounded">更新密码</button>
-                </div>
+                {/* Guest cannot change password - uses shared passcode */}
+                {currentUser.role !== 'guest' && (
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
+                        <h2 className="font-bold dark:text-white mb-4">修改密码</h2>
+                        <input type="password" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900 dark:border-gray-600 dark:text-white mb-4" placeholder="新密码" />
+                        <button onClick={handleChangePassword} className="bg-indigo-600 text-white px-6 py-2 rounded">更新密码</button>
+                    </div>
+                )}
+                
+                {/* Guest info notice */}
+                {currentUser.role === 'guest' && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-xl border border-yellow-200 dark:border-yellow-800 max-w-md">
+                        <h3 className="font-bold text-yellow-800 dark:text-yellow-300 mb-2">游客模式提示</h3>
+                        <p className="text-sm text-yellow-700 dark:text-yellow-400">您正以游客身份浏览，密码修改功能已禁用。游客使用共享口令登录，无法更改个人密码。</p>
+                    </div>
+                )}
                 
                 {/* Mobile / Convenient Settings */}
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
                      <h2 className="font-bold dark:text-white mb-4">应用设置</h2>
                      <div className="space-y-4">
                         {/* Storage Usage Display (Added for Mobile) */}
-                        {currentUser.role !== 'admin' && (
+                        {currentUser.role !== 'admin' && currentUser.role !== 'guest' && (
                             <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700">
                                 <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                                     <span>云端存储空间</span>
