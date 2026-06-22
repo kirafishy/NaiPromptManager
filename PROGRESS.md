@@ -138,3 +138,39 @@ video {
 - `676be68` — `fix(history): Lightbox 并排预览改 100% 原尺寸双列同步滚动 + 引导弹窗加查看效果提示`
 - `447047a` — `docs: 更新 PROGRESS / HANDOFF，记录 Lightbox 预览可读性修复`
 - `58f3ac1` — `fix(history): 覆盖 Tailwind Preflight 让对比图按原始尺寸显示`
+
+---
+
+## 2026-06-22 (续) — 军火库权重语法偏好
+
+### 完成内容
+
+- **改造** `components/ArtistAdmin.tsx` — 在“设置 → 偏好设置”新增“军火库”卡片，可切换画师 tag 复制权重语法
+  - 新增 LocalStorage key：`naipm.artistLibrary.weightSyntax`
+  - 默认值：`numeric`
+  - 可选值：`numeric` / `bracket`
+  - 切换时派发 `naipm-artist-weight-syntax-change` 事件，让当前 SPA 内军火库同步刷新偏好
+- **改造** `components/ArtistLibrary.tsx` — 军火库购物车内部权重统一为 step count
+  - step 范围：`-10..10`
+  - 数字语法步长：`0.1`
+  - 数字输出示例：`1.3::artist:name::` / `0.8::artist:name::`
+  - 括号输出示例：`{{artist:name}}` / `[[artist:name]]`
+  - 导入逻辑新增数字语法解析：`1.3::artist:name::` → step `3`
+  - 现有 `{}` / `[]` 导入保持兼容，并统一剥离括号内外的 `artist:` 前缀后 clamp 到 `-10..10`
+- **改造** `components/ArtistLibraryCart.tsx` — 底部购物车显示当前权重模式提示：`数字权重 ±0.1` 或 `括号权重 ±1层`
+- **新增** `docs/aegis/` workspace 与 implementation plan，记录本次设计、基线和执行计划
+
+### 关键设计决策
+
+| # | 决策 | 选择 | 理由 |
+|---|---|---|---|
+| 1 | 默认语法 | **数字权重** | 符合 NovelAI V4+ 更精确写法 |
+| 2 | 内部表示 | **step count** | 保持 +/- UI 简单，同时支持数字和括号两种投影 |
+| 3 | 权重范围 | **-10..10** | 对应数字 `0.0..2.0`，覆盖更宽的手动调权范围 |
+| 4 | 存储位置 | **LocalStorage** | 纯个人偏好，不需要云端同步 |
+| 5 | 导入闭环 | **支持数字语法导入** | 复制出去的内容可以重新导入，不形成半截功能 |
+
+### 验证
+
+- ✅ `npm run build` 通过（tsc + vite + worker esbuild）
+- ✅ 手动 `npm run dev:local` 已由用户完成验证并确认通过（默认数字、切换括号、数字语法导入闭环）

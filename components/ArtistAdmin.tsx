@@ -4,6 +4,11 @@ import { db } from '../services/dbService';
 import { Artist, User, UsageStats, AccessLog, DailyStat } from '../types';
 import { ROLE_POLICY } from '../config/rolePolicy';
 
+type ArtistWeightSyntax = 'numeric' | 'bracket';
+
+const ARTIST_WEIGHT_SYNTAX_KEY = 'naipm.artistLibrary.weightSyntax';
+const ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT = 'naipm-artist-weight-syntax-change';
+
 interface ExtendedArtistAdminProps {
     currentUser: User;
     artistsData: Artist[] | null;
@@ -74,6 +79,17 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
   const handleAutoJpgChange = (v: boolean) => {
       setAutoJpg(v);
       localStorage.setItem('naipm.compaction.autoJpg', v ? 'true' : 'false');
+  };
+
+  // 军火库偏好：控制复制画师 tag 时使用数字权重或括号权重
+  const [artistWeightSyntax, setArtistWeightSyntax] = useState<ArtistWeightSyntax>(() => {
+      const raw = localStorage.getItem(ARTIST_WEIGHT_SYNTAX_KEY);
+      return raw === 'bracket' ? 'bracket' : 'numeric';
+  });
+  const handleArtistWeightSyntaxChange = (syntax: ArtistWeightSyntax) => {
+      setArtistWeightSyntax(syntax);
+      localStorage.setItem(ARTIST_WEIGHT_SYNTAX_KEY, syntax);
+      window.dispatchEvent(new Event(ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT));
   };
 
   // Usage Stats State
@@ -793,6 +809,34 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                                 <span>更清晰（1.00）</span>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                {/* 军火库偏好（画师 tag 权重语法） */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
+                    <h2 className="font-bold dark:text-white mb-1">军火库</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                        控制军火库底部已选画师复制时的 NovelAI 权重语法。默认使用 V4+ 数字权重。
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 dark:bg-gray-900 p-1">
+                        <button
+                            type="button"
+                            onClick={() => handleArtistWeightSyntaxChange('numeric')}
+                            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${artistWeightSyntax === 'numeric' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-300 shadow' : 'text-gray-500 dark:text-gray-400'}`}
+                        >
+                            数字权重
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleArtistWeightSyntaxChange('bracket')}
+                            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${artistWeightSyntax === 'bracket' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-300 shadow' : 'text-gray-500 dark:text-gray-400'}`}
+                        >
+                            括号权重
+                        </button>
+                    </div>
+                    <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                        <p>数字：每次 +/- 调整 0.1，例如 <code className="font-mono">1.3::artist:name::</code></p>
+                        <p>括号：每次 +/- 调整一层，例如 <code className="font-mono">{'{artist:name}'}</code></p>
                     </div>
                 </div>
 

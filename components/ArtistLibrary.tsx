@@ -9,8 +9,54 @@ import { ArtistLibraryCart } from './ArtistLibraryCart';
 
 interface CartItem {
     name: string;
-    weight: number; // 0 normal, >0 {}, <0 []
+    weight: number; // step count: 0 normal, >0 strengthen, <0 weaken
 }
+
+type ArtistWeightSyntax = 'numeric' | 'bracket';
+
+const ARTIST_WEIGHT_SYNTAX_KEY = 'naipm.artistLibrary.weightSyntax';
+const ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT = 'naipm-artist-weight-syntax-change';
+const DEFAULT_ARTIST_WEIGHT_SYNTAX: ArtistWeightSyntax = 'numeric';
+const ARTIST_WEIGHT_MIN_STEP = -10;
+const ARTIST_WEIGHT_MAX_STEP = 10;
+const ARTIST_WEIGHT_NUMERIC_STEP = 0.1;
+
+const clampArtistWeightStep = (step: number) => {
+    return Math.min(ARTIST_WEIGHT_MAX_STEP, Math.max(ARTIST_WEIGHT_MIN_STEP, step));
+};
+
+const getStoredArtistWeightSyntax = (): ArtistWeightSyntax => {
+    const raw = localStorage.getItem(ARTIST_WEIGHT_SYNTAX_KEY);
+    return raw === 'bracket' ? 'bracket' : DEFAULT_ARTIST_WEIGHT_SYNTAX;
+};
+
+const formatArtistTagWithWeight = (tag: string, step: number, syntax: ArtistWeightSyntax) => {
+    const clampedStep = clampArtistWeightStep(step);
+    if (clampedStep === 0) return tag;
+
+    if (syntax === 'numeric') {
+        const numericWeight = 1 + clampedStep * ARTIST_WEIGHT_NUMERIC_STEP;
+        return `${numericWeight.toFixed(1)}::${tag}::`;
+    }
+
+    if (clampedStep > 0) return "{".repeat(clampedStep) + tag + "}".repeat(clampedStep);
+    return "[".repeat(Math.abs(clampedStep)) + tag + "]".repeat(Math.abs(clampedStep));
+};
+
+const normalizeArtistTagName = (name: string) => {
+    return name.replace(/^artist:/i, '').trim();
+};
+
+const parseNumericWeightedArtistTag = (raw: string): { name: string; step: number } | null => {
+    const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)::(.+)::$/);
+    if (!match) return null;
+
+    const numericWeight = parseFloat(match[1]);
+    if (!Number.isFinite(numericWeight)) return null;
+
+    const step = clampArtistWeightStep(Math.round((numericWeight - 1) / ARTIST_WEIGHT_NUMERIC_STEP));
+    return { name: normalizeArtistTagName(match[2]), step };
+};
 
 interface ArtistLibraryProps {
     isDark: boolean;
@@ -151,6 +197,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
+    const [artistWeightSyntax, setArtistWeightSyntax] = useState<ArtistWeightSyntax>(DEFAULT_ARTIST_WEIGHT_SYNTAX);
     const [lightboxState, setLightboxState] = useState<{ artistIdx: number, slotIdx: number } | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -206,6 +253,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         const savedPrefix = localStorage.getItem('nai_use_prefix');
         if (savedPrefix !== null) setUsePrefix(savedPrefix === 'true');
 
+        setArtistWeightSyntax(getStoredArtistWeightSyntax());
+
         const savedHistory = localStorage.getItem('nai_copy_history');
         if (savedHistory) setHistory(JSON.parse(savedHistory));
 
@@ -238,6 +287,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 setApiKey(savedKey);
             }
         }
+        const handleArtistWeightSyntaxChange = () => {
+            setArtistWeightSyntax(getStoredArtistWeightSyntax());
+        };
+        const handleArtistWeightSyntaxStorage = (event: StorageEvent) => {
+            if (event.key === ARTIST_WEIGHT_SYNTAX_KEY) {
+                setArtistWeightSyntax(getStoredArtistWeightSyntax());
+            }
+        };
+        window.addEventListener(ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT, handleArtistWeightSyntaxChange);
+        window.addEventListener('storage', handleArtistWeightSyntaxStorage);
+
+        return () => {
+            window.removeEventListener(ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT, handleArtistWeightSyntaxChange);
+            window.removeEventListener('storage', handleArtistWeightSyntaxStorage);
+        };
     }, []);
 
     // API Key 存储状态：是否记住（持久化到 localStorage）
@@ -301,18 +365,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
 
     const updateWeight = (index: number, delta: number) => {
         const newCart = [...cart];
-        let w = newCart[index].weight + delta;
-        if (w > 3) w = 3;
-        if (w < -3) w = -3;
-        newCart[index].weight = w;
+        newCart[index].weight = clampArtistWeightStep(newCart[index].weight + delta);
         setCart(newCart);
     };
 
     const formatTag = (item: CartItem) => {
-        let s = (usePrefix ? 'artist:' : '') + item.name;
-        if (item.weight > 0) s = "{".repeat(item.weight) + s + "}".repeat(item.weight);
-        if (item.weight < 0) s = "[".repeat(Math.abs(item.weight)) + s + "]".repeat(Math.abs(item.weight));
-        return s;
+        const tag = (usePrefix ? 'artist:' : '') + item.name;
+        return formatArtistTagWithWeight(tag, item.weight, artistWeightSyntax);
     };
 
     const copyCart = () => {
@@ -356,21 +415,24 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
         const newItems: CartItem[] = [];
 
         tags.forEach(raw => {
-            let name = raw.replace(/^artist:/i, '');
-            let weight = 0;
+            const numericParsed = parseNumericWeightedArtistTag(raw);
+            let name = numericParsed ? numericParsed.name : normalizeArtistTagName(raw);
+            let weight = numericParsed ? numericParsed.step : 0;
 
-            // Simple brace counting
-            const openBraces = (name.match(/\{/g) || []).length;
-            const closeBraces = (name.match(/\}/g) || []).length;
-            const openBrackets = (name.match(/\[/g) || []).length;
-            const closeBrackets = (name.match(/\]/g) || []).length;
+            if (!numericParsed) {
+                // Simple brace counting
+                const openBraces = (name.match(/\{/g) || []).length;
+                const closeBraces = (name.match(/\}/g) || []).length;
+                const openBrackets = (name.match(/\[/g) || []).length;
+                const closeBrackets = (name.match(/\]/g) || []).length;
 
-            if (openBraces > 0 && openBraces === closeBraces) {
-                weight = openBraces;
-                name = name.replace(/[\{\}]/g, '');
-            } else if (openBrackets > 0 && openBrackets === closeBrackets) {
-                weight = -openBrackets;
-                name = name.replace(/[\[\]]/g, '');
+                if (openBraces > 0 && openBraces === closeBraces) {
+                    weight = clampArtistWeightStep(openBraces);
+                    name = normalizeArtistTagName(name.replace(/[\{\}]/g, ''));
+                } else if (openBrackets > 0 && openBrackets === closeBrackets) {
+                    weight = clampArtistWeightStep(-openBrackets);
+                    name = normalizeArtistTagName(name.replace(/[\[\]]/g, ''));
+                }
             }
 
             // Match with known artists
@@ -1150,6 +1212,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ isDark, toggleThem
                 toggleCart={toggleCart}
                 copyCart={copyCart}
                 formatTag={formatTag}
+                weightSyntax={artistWeightSyntax}
             />
 
             {currentLightboxImage && (
