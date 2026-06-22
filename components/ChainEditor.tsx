@@ -4,6 +4,7 @@ import { PromptChain, PromptModule, User, CharacterParams, NAIParams } from '../
 import { compilePrompt } from '../services/promptUtils';
 import { generateImage } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
+import { compressPngToJpg } from '../services/imageCompression';
 import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
@@ -522,7 +523,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
             setGeneratedImage(result.image);
             // Use actual seed returned from generation
             const finalParams = { ...activeParams, seed: result.seed };
-            await localHistory.add(result.image, finalPrompt, finalParams);
+            // 自动 JPG 保存：开启时在入库前把 PNG 转码为 JPG（仅作用于本地历史记录）
+            // 失败时回退到原 PNG，绝不阻塞主流程 —— 元数据始终走 prompt/params 独立字段
+            let finalImage = result.image;
+            if (localStorage.getItem('naipm.compaction.autoJpg') === 'true') {
+                try {
+                    const q = parseFloat(localStorage.getItem('naipm.compaction.quality') || '0.85');
+                    const quality = isNaN(q) ? 0.85 : Math.min(1, Math.max(0.01, q));
+                    const { jpgDataUri } = await compressPngToJpg(result.image, quality);
+                    finalImage = jpgDataUri;
+                } catch (err) {
+                    console.warn('自动 JPG 保存失败，回退为 PNG 入库:', err);
+                }
+            }
+            await localHistory.add(finalImage, finalPrompt, finalParams);
         } catch (e: any) {
             setErrorMsg(e.message);
             notify(e.message, 'error');

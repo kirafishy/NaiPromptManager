@@ -172,7 +172,7 @@ npx wrangler pages project create nai-prompt-manager --production-branch main ||
 2. 部署完成后，访问你的 Pages 域名。
 3. 系统会自动初始化数据库结构。
 4. 默认管理员账号：`admin`，密码：`admin_996`。
-5. **强烈建议**：首次登录后，进入“我的 -> 个人设置”修改密码。
+5. **强烈建议**：首次登录后，进入“设置 -> 偏好设置”修改密码。
 
 ---
 

@@ -76,6 +76,36 @@ class LocalHistoryService {
         });
     }
 
+    /**
+     * 就地更新单条记录的 imageUrl 字段（用于历史压缩 PNG→JPG 重编码）。
+     *
+     * 仅替换 imageUrl，其余字段（prompt / params / createdAt / id）保持原样。
+     * 单条 readwrite 事务，与批量压缩主循环"逐条独立事务、单条失败跳过"的原子性策略一致。
+     *
+     * @param id          目标记录的主键
+     * @param newImageUrl 新的 Data URI（通常是 `data:image/jpeg;base64,...`）
+     */
+    async updateImage(id: string, newImageUrl: string): Promise<void> {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const getReq = store.get(id);
+            getReq.onsuccess = () => {
+                const item = getReq.result as LocalGenItem | undefined;
+                if (!item) {
+                    reject(new Error(`记录不存在: ${id}`));
+                    return;
+                }
+                item.imageUrl = newImageUrl;
+                const putReq = store.put(item);
+                putReq.onsuccess = () => resolve();
+                putReq.onerror = () => reject(putReq.error);
+            };
+            getReq.onerror = () => reject(getReq.error);
+        });
+    }
+
     async delete(id: string): Promise<void> {
         const db = await this.open();
         return new Promise((resolve, reject) => {

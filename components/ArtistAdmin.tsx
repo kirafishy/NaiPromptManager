@@ -23,9 +23,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
   const isAdmin = currentUser.role === 'admin';
   const isVip = currentUser.role === 'vip';
   const canManageArtists = ROLE_POLICY.canManageArtists(currentUser.role);
-  const [activeTab, setActiveTab] = useState<'artist' | 'users' | 'profile' | 'stats'>(
-    isAdmin ? 'artist' : (isVip ? 'artist' : 'profile')
-  );
+  const [activeTab, setActiveTab] = useState<'artist' | 'users' | 'profile' | 'stats'>('profile');
   
   // Artist State (Managed via props now, filtered here if needed)
   const artists = artistsData || [];
@@ -57,6 +55,26 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
 
   // Profile State
   const [myNewPassword, setMyNewPassword] = useState('');
+
+  // 图片压缩偏好（与"历史压缩 / 自动 JPG 保存"共享）
+  // 存储：LocalStorage `naipm.compaction.*` 命名空间
+  const [jpgQuality, setJpgQuality] = useState<number>(() => {
+      const raw = localStorage.getItem('naipm.compaction.quality');
+      const v = raw ? parseFloat(raw) : 0.85;
+      return isNaN(v) ? 0.85 : v;
+  });
+  const [autoJpg, setAutoJpg] = useState<boolean>(
+      () => localStorage.getItem('naipm.compaction.autoJpg') === 'true'
+  );
+  const handleQualityChange = (v: number) => {
+      const clamped = Math.min(1, Math.max(0.01, v));
+      setJpgQuality(clamped);
+      localStorage.setItem('naipm.compaction.quality', clamped.toFixed(2));
+  };
+  const handleAutoJpgChange = (v: boolean) => {
+      setAutoJpg(v);
+      localStorage.setItem('naipm.compaction.autoJpg', v ? 'true' : 'false');
+  };
 
   // Usage Stats State
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
@@ -343,6 +361,8 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
         </div>
 
         <div className="flex space-x-4 mb-8 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+            {/* 偏好设置：所有角色可见，作为默认子标签（含密码、JPG 质量、自动 JPG 保存） */}
+            <button onClick={() => setActiveTab('profile')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'profile' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>偏好设置</button>
             {/* 画师管理：admin和vip可见 */}
             {(isAdmin || isVip) && (
                 <button onClick={() => setActiveTab('artist')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'artist' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>画师管理</button>
@@ -354,7 +374,6 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                     <button onClick={() => setActiveTab('stats')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'stats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>使用统计</button>
                 </>
             )}
-            <button onClick={() => setActiveTab('profile')} className={`pb-3 px-2 border-b-2 whitespace-nowrap ${activeTab === 'profile' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'}`}>个人设置</button>
         </div>
 
         {/* --- ARTIST TAB --- */}
@@ -718,6 +737,65 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                     </div>
                 )}
                 
+                {/* 图片压缩偏好（自动 JPG 保存 + JPG 质量，与历史压缩共享配置） */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
+                    <h2 className="font-bold dark:text-white mb-1">图片压缩</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                        控制"自动 JPG 保存"和"历史压缩"共享的 JPG 质量与开关。仅作用于本地历史记录，不影响云端。
+                    </p>
+                    <div className="space-y-4">
+                        {/* 自动 JPG 保存开关 */}
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-sm font-medium text-gray-700 dark:text-gray-200">自动 JPG 保存</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    新生成的图片在入库前先转码为 JPG，节省本地空间
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={autoJpg}
+                                onClick={() => handleAutoJpgChange(!autoJpg)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                                    autoJpg ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'
+                                }`}
+                            >
+                                <span
+                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                                        autoJpg ? 'translate-x-5' : 'translate-x-0.5'
+                                    }`}
+                                />
+                            </button>
+                        </div>
+
+                        {/* JPG 质量滑块 */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                    JPG 质量
+                                </label>
+                                <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400">
+                                    {jpgQuality.toFixed(2)}
+                                </span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1"
+                                step="0.01"
+                                value={jpgQuality}
+                                onChange={e => handleQualityChange(parseFloat(e.target.value))}
+                                className="w-full accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                                <span>更小（0.10）</span>
+                                <span>更清晰（1.00）</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Mobile / Convenient Settings */}
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow max-w-md">
                      <h2 className="font-bold dark:text-white mb-4">应用设置</h2>
