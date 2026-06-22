@@ -12,11 +12,11 @@
 |---|---|
 | 代码实现 | ✅ 完成（6 个改文件 + 1 个新文件） |
 | `tsc -b` | ✅ 通过 |
-| `vite build` | ✅ 通过（dist/index-*.js 521KB → gzip 149KB） |
+| `vite build` | ✅ 通过（dist/index-*.js 523KB → gzip 150KB） |
 | `esbuild build:worker` | ✅ 通过（dist/_worker.js 90.6KB） |
 | `npm run dev:local` 手动验证 | ⏳ **未跑**，下个 session 第一件事 |
-| Git commit | ✅ 已提交（见下方哈希位） |
-| PROGRESS.md | ✅ 已新建并记录 |
+| Git commit | ✅ 已提交（51fc1bf + 676be68 修复预览可读性） |
+| PROGRESS.md | ✅ 已新建并记录两次迭代 |
 
 ---
 
@@ -51,7 +51,8 @@
 - [ ] 开启"自动 JPG 保存" → `localStorage['naipm.compaction.autoJpg'] === 'true'` → 在实验室生图一张 → 历史页该条 `imageUrl` 是 `data:image/jpeg;base64,...`（缩略图右下/左上有 JPG 角标）
 - [ ] 历史页"清理 ▼"菜单里的"📦 压缩 PNG..."项启用 → 点击 → 弹确认 → 弹进度模态 → 看到四元进度信息（已处理 X/Y、节省 ~Z MB、失败 W 张、预计剩余 T 秒）→ 完成摘要展示成功/失败/节省总量/压缩率%
 - [ ] 全部已压完后再点压缩按钮 → disabled 灰色 + title 提示"无需压缩"
-- [ ] Lightbox 打开一张 **PNG** → 调质量滑块 → 400ms 后右侧"预览 JPG"刷新 → 点"压缩此图"覆盖 → 关闭 lightbox 后主网格缩略图同步加 JPG 角标
+- [ ] Lightbox 打开一张 **PNG** → 调质量滑块 → 400ms 后右侧"预览 JPG"刷新 → **左右双列都以原尺寸显示，可上下/左右拖动；滚动一侧另一侧同步移动**（看贴边、眼睛、纹理的真实差异）→ 点"压缩此图"覆盖 → 关闭 lightbox 后主网格缩略图同步加 JPG 角标
+- [ ] 引导弹窗主文案下方有 **琥珀色提示块**告知"可以在详情里调滑块预览"
 - [ ] Lightbox 打开已压缩 **JPG** → 显示绿色"此图已压缩"块 + 下载按钮文案变为"下载 JPG"，下载文件名以 `.jpg` 结尾
 - [ ] **游客模式**切到历史页 → **不弹**引导弹窗
 - [ ] 切到"设置"标签页 → 侧栏图标是 **齿轮**，主面板默认进入"偏好设置"

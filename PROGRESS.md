@@ -60,3 +60,37 @@
 - IndexedDB schema、`DB_VERSION = 1`
 - Worker 后端、灵感图库 / R2 存储
 - `ArtistAdmin.tsx` tab id `'admin'` / `'profile'` 字符串不变（仅 UI 文案与顺序变化）
+
+---
+
+## 2026-06-22 (续) — Lightbox 并排预览可读性修复
+
+### 用户反馈
+
+1. Lightbox 并排预览图太小完全看不出压缩效果
+2. 引导弹窗没提示用户可以在详情里看压缩效果
+
+### 修复内容
+
+- **`components/GenHistory.tsx`** —
+  - 并排预览容器从 `flex items-center justify-center` + `max-w-full max-h-[85%]` 改为 **100% 原尺寸 + 双列 overflow-auto 同步滚动**
+  - 新增 `previewLeftRef` / `previewRightRef` 两个 ref + `scrollSyncingRef` 防回弹标记
+  - 新增 useEffect 监听双方 scroll 事件，互相镜像 scrollTop/scrollLeft
+  - 列顶部 sticky 标签条，滚动时不丢方向感
+  - 左下角 toast 提示用户"拖动查看贴边/眼睛/纹理细节"
+  - 引导弹窗主文案后插入琥珀色提示块："想先看效果？点开任意历史图详情，拖动 JPG 质量滑块就能实时预览"
+
+### 设计选择
+
+| 选项 | 选择 | 理由 |
+|---|---|---|
+| 预览交互 | **双列同步滚动** | 保留"一眼看全貌"不变性；缩放交给浏览器滚动 |
+| 防回弹机制 | **ref 标记** 而非 RAF / debounce | 单帧最简洁、零延迟、无内存累积 |
+| 标签位置 | **sticky 顶部** 而非外置 | 滚动时仍能看到当前对比侧 |
+
+### 验证
+
+- ✅ `tsc -b` 无错误
+- ✅ `vite build` 通过（bundle +1.3KB）
+- ✅ `esbuild build:worker` 通过
+- ⏳ 手动 `npm run dev:local` 留给下个 session
