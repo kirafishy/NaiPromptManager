@@ -819,7 +819,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         <div className="sticky top-0 left-0 z-10 px-2 py-1 bg-gray-900/70 text-white text-[10px] uppercase tracking-wider w-full backdrop-blur-sm">
                                             原图 PNG（100%）
                                         </div>
-                                        <img src={lightbox.imageUrl} className="block shadow-lg" />
+                                        <img src={lightbox.imageUrl} className="block max-w-none h-auto shadow-lg" />
                                     </div>
                                     {/* 右：JPG 预览 */}
                                     <div
@@ -829,7 +829,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                                         <div className="sticky top-0 left-0 z-10 px-2 py-1 bg-emerald-600/80 text-white text-[10px] uppercase tracking-wider w-full backdrop-blur-sm">
                                             预览 JPG q={lightboxQuality.toFixed(2)}（100%）
                                         </div>
-                                        <img src={previewJpgDataUri} className="block shadow-lg" />
+                                        <img src={previewJpgDataUri} className="block max-w-none h-auto shadow-lg" />
                                     </div>
                                 </div>
                             ) : (
