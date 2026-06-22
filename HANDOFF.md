@@ -1,7 +1,7 @@
-# HANDOFF — 图片 JPG 压缩功能（实现已完成，待手动验证）
+# HANDOFF — 图片 JPG 压缩功能（已验证并已推送）
 
-> 上一个 session：**实现 + tsc/vite/esbuild 构建通过**。
-> 接手 session 任务：**`npm run dev:local` 跑 DoD 清单 → 修补真实使用中暴露的问题（如有）**。
+> 当前状态：**实现完成、构建通过、手动 DoD 验证完成、远端已推送**。
+> 接手 session 任务：无需继续本功能主线；仅在用户反馈新问题时按具体症状修补。
 > 历史详情见 [PROGRESS.md](./PROGRESS.md)；架构决策见 [docs/adr/0001-*](./docs/adr/0001-jpg-compaction-discards-nai-metadata.md)；术语见 [CONTEXT.md](./CONTEXT.md)。
 
 ---
@@ -14,9 +14,9 @@
 | `tsc -b` | ✅ 通过 |
 | `vite build` | ✅ 通过（dist/index-*.js 523KB → gzip 150KB） |
 | `esbuild build:worker` | ✅ 通过（dist/_worker.js 90.6KB） |
-| `npm run dev:local` 手动验证 | ⏳ **未跑**，下个 session 第一件事 |
-| Git commit | ✅ 已提交（51fc1bf + 676be68 修复预览可读性） |
-| PROGRESS.md | ✅ 已新建并记录两次迭代 |
+| `npm run dev:local` 手动验证 | ✅ **已完成**（用户确认验证通过） |
+| Git commit | ✅ 已提交并推送（51fc1bf + 676be68 + 58f3ac1；文档记录 447047a） |
+| PROGRESS.md | ✅ 已新建并记录实现、修复、验证完成状态 |
 
 ---
 
@@ -41,31 +41,32 @@
 
 ---
 
-## 下一个 Session 的 DoD 验证步骤
+## 已完成的 DoD 验证步骤
 
-按顺序在 `npm run dev:local` 起来后手动验证：
+`npm run dev:local` 启动后，用户已完成验证并确认通过：
 
-- [ ] 用 admin 登录 → 切到"历史"标签页 → **引导弹窗弹出**
-- [ ] 引导弹窗按 ESC → 关闭 → `localStorage['naipm.compaction.onboarded'] === 'true'`，再次进入历史不弹
-- [ ] 进入"设置 → 偏好设置" → 调节 JPG 质量滑块 → `localStorage['naipm.compaction.quality']` 实时更新
-- [ ] 开启"自动 JPG 保存" → `localStorage['naipm.compaction.autoJpg'] === 'true'` → 在实验室生图一张 → 历史页该条 `imageUrl` 是 `data:image/jpeg;base64,...`（缩略图右下/左上有 JPG 角标）
-- [ ] 历史页"清理 ▼"菜单里的"📦 压缩 PNG..."项启用 → 点击 → 弹确认 → 弹进度模态 → 看到四元进度信息（已处理 X/Y、节省 ~Z MB、失败 W 张、预计剩余 T 秒）→ 完成摘要展示成功/失败/节省总量/压缩率%
-- [ ] 全部已压完后再点压缩按钮 → disabled 灰色 + title 提示"无需压缩"
-- [ ] Lightbox 打开一张 **PNG** → 调质量滑块 → 400ms 后右侧"预览 JPG"刷新 → **左右双列都以原尺寸显示，可上下/左右拖动；滚动一侧另一侧同步移动**（看贴边、眼睛、纹理的真实差异）→ 点"压缩此图"覆盖 → 关闭 lightbox 后主网格缩略图同步加 JPG 角标
-- [ ] 引导弹窗主文案下方有 **琥珀色提示块**告知"可以在详情里调滑块预览"
-- [ ] Lightbox 打开已压缩 **JPG** → 显示绿色"此图已压缩"块 + 下载按钮文案变为"下载 JPG"，下载文件名以 `.jpg` 结尾
-- [ ] **游客模式**切到历史页 → **不弹**引导弹窗
-- [ ] 切到"设置"标签页 → 侧栏图标是 **齿轮**，主面板默认进入"偏好设置"
+- [x] 用 admin 登录 → 切到"历史"标签页 → **引导弹窗弹出**
+- [x] 引导弹窗按 ESC → 关闭 → `localStorage['naipm.compaction.onboarded'] === 'true'`，再次进入历史不弹
+- [x] 进入"设置 → 偏好设置" → 调节 JPG 质量滑块 → `localStorage['naipm.compaction.quality']` 实时更新
+- [x] 开启"自动 JPG 保存" → `localStorage['naipm.compaction.autoJpg'] === 'true'` → 在实验室生图一张 → 历史页该条 `imageUrl` 是 `data:image/jpeg;base64,...`（缩略图右下/左上有 JPG 角标）
+- [x] 历史页"清理 ▼"菜单里的"📦 压缩 PNG..."项启用 → 点击 → 弹确认 → 弹进度模态 → 看到四元进度信息（已处理 X/Y、节省 ~Z MB、失败 W 张、预计剩余 T 秒）→ 完成摘要展示成功/失败/节省总量/压缩率%
+- [x] 全部已压完后再点压缩按钮 → disabled 灰色 + title 提示"无需压缩"
+- [x] Lightbox 打开一张 **PNG** → 调质量滑块 → 400ms 后右侧"预览 JPG"刷新 → **左右双列都以原尺寸显示，可上下/左右拖动；滚动一侧另一侧同步移动**（看贴边、眼睛、纹理的真实差异）→ 点"压缩此图"覆盖 → 关闭 lightbox 后主网格缩略图同步加 JPG 角标
+- [x] Tailwind Preflight `img { max-width: 100% }` 已由并排预览图上的 `max-w-none h-auto` 覆盖，确认不再适应窗口缩小全图
+- [x] 引导弹窗主文案下方有 **琥珀色提示块**告知"可以在详情里调滑块预览"
+- [x] Lightbox 打开已压缩 **JPG** → 显示绿色"此图已压缩"块 + 下载按钮文案变为"下载 JPG"，下载文件名以 `.jpg` 结尾
+- [x] **游客模式**切到历史页 → **不弹**引导弹窗
+- [x] 切到"设置"标签页 → 侧栏图标是 **齿轮**，主面板默认进入"偏好设置"
 
 ---
 
-## 已知潜在风险（手动验证时重点观察）
+## 后续可选优化（非阻塞）
 
-1. **`refreshPendingPngCount` 走 `localHistory.getAll()` 全表扫描**：用户图库有几千张时第一次进历史页可能略卡（IndexedDB 全表读 base64 字段）。如果可感知卡顿，下一步可改成 IDB 游标分批扫描，仅判断 imageUrl 前 32 字节。
-2. **`compressPngToJpg` 在大图上耗时**：4K 图像在低端机型 Canvas 重绘 + base64 编码可能 >1s/张。批量压缩 1000+ 张时整体可能 10 分钟+，取消按钮是必备。已在 progress 里做了"当前张完成后停止"的语义。
-3. **autoJpg + 失败回退**：当前是 `try { compress } catch { 用 PNG }`，console.warn 一行。下个 session 如果观察到失败率高，需要给用户可见反馈（toast）；目前选择"静默回退"是因为元数据始终走独立字段，回退无功能损失。
-4. **Lightbox 并排预览的内存占用**：当前同时持有 PNG 原图 + JPG 预览两个 base64，4K 图理论上能吃 30MB+。debounce 已加，但用户疯狂拖滑块仍会持续生成新预览。如果 OOM，可加 cancel token。
-5. **`compactCancelRef.current` 的 stale UI 反馈**：取消按钮上的"正在停止..."依赖 ref 但不会触发 rerender，要等下一次进度更新才会反映。如果用户疯狂点取消可能感觉无响应。不影响功能，可忽略。
+1. **`refreshPendingPngCount` 走 `localHistory.getAll()` 全表扫描**：用户图库有几千张时第一次进历史页可能略卡（IndexedDB 全表读 base64 字段）。如果后续可感知卡顿，可改成 IDB 游标分批扫描，仅判断 imageUrl 前 32 字节。
+2. **`compressPngToJpg` 在大图上耗时**：4K 图像在低端机型 Canvas 重绘 + base64 编码可能 >1s/张。批量压缩 1000+ 张时整体可能 10 分钟+；当前已有取消按钮和逐条事务保护。
+3. **autoJpg + 失败回退**：当前是 `try { compress } catch { 用 PNG }`，console.warn 一行。若后续观察到失败率高，可给用户可见 toast；目前选择"静默回退"是因为元数据始终走独立字段，回退无功能损失。
+4. **Lightbox 并排预览的内存占用**：当前同时持有 PNG 原图 + JPG 预览两个 base64，4K 图理论上能吃 30MB+。debounce 已加；如果 OOM，可加 cancel token 或复用 object URL。
+5. **`compactCancelRef.current` 的 stale UI 反馈**：取消按钮上的"正在停止..."依赖 ref 但不会触发 rerender，要等下一次进度更新才会反映。不影响功能，可后续微调。
 
 ---
 

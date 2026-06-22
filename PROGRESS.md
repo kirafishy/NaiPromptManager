@@ -93,4 +93,48 @@
 - ✅ `tsc -b` 无错误
 - ✅ `vite build` 通过（bundle +1.3KB）
 - ✅ `esbuild build:worker` 通过
-- ⏳ 手动 `npm run dev:local` 留给下个 session
+- ✅ 手动 `npm run dev:local` 已由用户完成验证并确认通过（含 Lightbox 预览、引导弹窗、设置路径、自动 JPG 保存、游客不弹引导等主流程）
+
+---
+
+## 2026-06-22 (续) — Tailwind Preflight 覆盖与验证完成
+
+### 用户反馈
+
+- Lightbox 对比图仍然不是 100% 原尺寸，而是在窗口内自适应显示全图。
+
+### 根因
+
+Tailwind Preflight 全局注入：
+
+```css
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+```
+
+此前并排预览里的 `<img className="block shadow-lg" />` 虽然移除了 `max-h` / `object-contain`，但仍被全局 `max-width: 100%` 限制，导致实际显示仍适应父容器宽度。
+
+### 修复
+
+- 在并排预览的 PNG / JPG 两张图上加 `max-w-none h-auto`：
+  - 覆盖 Preflight 的 `max-width: 100%`
+  - 保持等比高度
+  - 只影响压缩对比预览，不影响缩略图、普通 Lightbox 单图或其他页面图片
+
+### 验证与发布
+
+- ✅ `tsc -b` 通过
+- ✅ `vite build` 通过
+- ✅ `esbuild build:worker` 通过
+- ✅ 用户完成 `npm run dev:local` 手动验证，确认全部 DoD 通过
+- ✅ 用户确认已推送到远端
+
+### 关联提交
+
+- `51fc1bf` — `feat(history): 添加图片 JPG 压缩与自动 JPG 保存`
+- `676be68` — `fix(history): Lightbox 并排预览改 100% 原尺寸双列同步滚动 + 引导弹窗加查看效果提示`
+- `447047a` — `docs: 更新 PROGRESS / HANDOFF，记录 Lightbox 预览可读性修复`
+- `58f3ac1` — `fix(history): 覆盖 Tailwind Preflight 让对比图按原始尺寸显示`
