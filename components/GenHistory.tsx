@@ -98,6 +98,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
     const [lightboxQuality, setLightboxQuality] = useState<number>(() => readQuality());
     /** 当前正在生成预览 */
     const [previewing, setPreviewing] = useState(false);
+    /** 并排预览的双列同步滚动容器 ref，监听 scroll 镜像 scrollTop/scrollLeft */
+    const previewLeftRef = useRef<HTMLDivElement | null>(null);
+    const previewRightRef = useRef<HTMLDivElement | null>(null);
+    /** 同步 scroll 时的"内部触发"标记，防止 A→B→A 反向回弹无限循环 */
+    const scrollSyncingRef = useRef<boolean>(false);
     /** 单张压缩进行中 */
     const [singleCompacting, setSingleCompacting] = useState(false);
     /** 预览 debounce timer */
@@ -482,6 +487,42 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
         setLightboxQuality(readQuality());
     }, [lightbox?.id]);
 
+    /**
+     * 双列同步滚动：当并排预览开启时，监听任一容器的 scroll 事件，
+     * 把 scrollTop/scrollLeft 镜像到另一侧。
+     *
+     * 关键防回弹：A 触发 onScroll 后我们写 B.scrollTop = A.scrollTop，
+     * 这又会让 B 的 onScroll 触发；用 scrollSyncingRef 标记"这是内部回写"，
+     * 让对侧 listener 直接 return，避免无限循环。
+     */
+    useEffect(() => {
+        const left = previewLeftRef.current;
+        const right = previewRightRef.current;
+        // 双方都挂载且并排预览正在显示
+        if (!left || !right || !previewJpgDataUri || lightboxIsJpg) return;
+
+        const sync = (source: HTMLDivElement, target: HTMLDivElement) => {
+            if (scrollSyncingRef.current) {
+                scrollSyncingRef.current = false;
+                return;
+            }
+            scrollSyncingRef.current = true;
+            target.scrollTop = source.scrollTop;
+            target.scrollLeft = source.scrollLeft;
+        };
+
+        const onLeft = () => sync(left, right);
+        const onRight = () => sync(right, left);
+        left.addEventListener('scroll', onLeft, { passive: true });
+        right.addEventListener('scroll', onRight, { passive: true });
+        return () => {
+            left.removeEventListener('scroll', onLeft);
+            right.removeEventListener('scroll', onRight);
+        };
+        // 依赖 previewJpgDataUri：预览首次出现 / 切换图片时重新挂载 listener
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewJpgDataUri, lightbox?.id]);
+
     /** 触发软实时预览（debounce） */
     const schedulePreview = (quality: number) => {
         if (!lightbox || isJpgDataUri(lightbox.imageUrl)) return;
@@ -765,17 +806,30 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                 <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-8" onClick={() => setLightbox(null)}>
                     <div className="bg-white dark:bg-gray-900 w-full max-w-6xl h-[85vh] md:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
                         {/* Image Area —— 原图 / 并排预览二选一 */}
-                        <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
+                        <div className="flex-1 bg-gray-100 dark:bg-black/50 flex items-center justify-center p-4 relative h-[45%] md:h-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 overflow-hidden">
                             {previewJpgDataUri && !lightboxIsJpg ? (
                                 // 并排预览：左 PNG 原图，右 JPG 预览
-                                <div className="w-full h-full flex flex-col md:flex-row gap-2 items-center justify-center">
-                                    <div className="flex-1 flex flex-col items-center justify-center max-h-full">
-                                        <span className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">原图 PNG</span>
-                                        <img src={lightbox.imageUrl} className="max-w-full max-h-[85%] object-contain shadow-lg" />
+                                // 100% 原尺寸 + 双列同步滚动，看贴边/眼睛/纹理的真实差异
+                                <div className="w-full h-full flex flex-col md:flex-row gap-2">
+                                    {/* 左：PNG 原图 */}
+                                    <div
+                                        ref={previewLeftRef}
+                                        className="flex-1 min-h-0 overflow-auto bg-white/40 dark:bg-black/40 rounded relative"
+                                    >
+                                        <div className="sticky top-0 left-0 z-10 px-2 py-1 bg-gray-900/70 text-white text-[10px] uppercase tracking-wider w-full backdrop-blur-sm">
+                                            原图 PNG（100%）
+                                        </div>
+                                        <img src={lightbox.imageUrl} className="block shadow-lg" />
                                     </div>
-                                    <div className="flex-1 flex flex-col items-center justify-center max-h-full">
-                                        <span className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">预览 JPG ({lightboxQuality.toFixed(2)})</span>
-                                        <img src={previewJpgDataUri} className="max-w-full max-h-[85%] object-contain shadow-lg" />
+                                    {/* 右：JPG 预览 */}
+                                    <div
+                                        ref={previewRightRef}
+                                        className="flex-1 min-h-0 overflow-auto bg-white/40 dark:bg-black/40 rounded relative"
+                                    >
+                                        <div className="sticky top-0 left-0 z-10 px-2 py-1 bg-emerald-600/80 text-white text-[10px] uppercase tracking-wider w-full backdrop-blur-sm">
+                                            预览 JPG q={lightboxQuality.toFixed(2)}（100%）
+                                        </div>
+                                        <img src={previewJpgDataUri} className="block shadow-lg" />
                                     </div>
                                 </div>
                             ) : (
@@ -783,6 +837,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             )}
                             {previewing && (
                                 <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded">生成预览中...</div>
+                            )}
+                            {/* 并排预览模式下，左下角提示用户可以滚动查看细节 */}
+                            {previewJpgDataUri && !lightboxIsJpg && (
+                                <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-[10px] rounded pointer-events-none">
+                                    💡 双列已同步滚动，拖动查看贴边 / 眼睛 / 纹理细节
+                                </div>
                             )}
                         </div>
 
@@ -1008,10 +1068,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, notify, onN
                             📦
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 text-center">体积太大？试试自动 JPG 保存</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed text-center">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 leading-relaxed text-center">
                             开启后，新生成的图片在保存到本地前会先转码为 JPG（默认质量 0.85），通常能节省 50%–80% 空间。
                             应用内仍可查看完整的 Prompt 与生成参数。
                         </p>
+                        {/* 提示用户也可以在任意历史图详情里调质量看预览，降低"启用"的心理门槛 */}
+                        <div className="flex items-start gap-2 mb-5 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <span className="text-amber-500 dark:text-amber-400 text-sm leading-tight">💡</span>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                                想先看效果？点开任意一张历史图的详情，拖动 <strong>JPG 质量</strong> 滑块就能并排预览压缩前后的真实差异。
+                            </p>
+                        </div>
                         <div className="flex gap-2">
                             <button
                                 onClick={() => dismissOnboarding(false)}
