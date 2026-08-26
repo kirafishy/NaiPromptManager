@@ -18,6 +18,7 @@ import { ChainEditorPreview } from './ChainEditorPreview';
 import { ChainEditorVibePanel } from './ChainEditorVibePanel';
 import { useFeedback } from './ui/Feedback';
 import { SaveAsChainSheet } from './SaveAsChainSheet';
+import { AddCharacterPicker } from './AddCharacterPicker';
 import { vibeLibrary } from '../services/vibeLibrary';
 import { resolveVibeMounts, validateVibeMounts } from '../services/vibeResolve';
 
@@ -126,6 +127,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     const importInputRef = useRef<HTMLInputElement>(null);
     const [showForkModal, setShowForkModal] = useState(false);
     const [composeOpen, setComposeOpen] = useState(true);
+    const [addCharOpen, setAddCharOpen] = useState(false);
 
     // --- Initialization ---
 
@@ -382,9 +384,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
     };
 
     // --- Character Handlers ---
-    const addCharacter = () => {
+    const addCharacter = (prompt: string) => {
         if (!canEdit) return;
-        const newChar: CharacterParams = { id: crypto.randomUUID(), prompt: '', x: 0.5, y: 0.5 };
+        const newChar: CharacterParams = { id: crypto.randomUUID(), prompt, x: 0.5, y: 0.5 };
         setParams({ ...params, characters: [...(params.characters || []), newChar] });
         setComposeOpen(true);
         markChange();
@@ -977,13 +979,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                         compositionExtra={(
                             <>
                                 <Chip
-                                    active={params.useCoords ?? true}
+                                    active={!!params.useCoords}
                                     disabled={!canEdit}
-                                    onClick={() => { setParams({ ...params, useCoords: !(params.useCoords ?? true) }); markChange(); }}
+                                    onClick={() => { setParams({ ...params, useCoords: !params.useCoords }); markChange(); }}
                                 >
                                     手动坐标
                                 </Chip>
-                                {canEdit && <Button variant="ghost" size="sm" onClick={addCharacter}>+ 角色</Button>}
+                                {canEdit && <Button variant="ghost" size="sm" onClick={() => setAddCharOpen(true)}>+ 角色</Button>}
                             </>
                         )}
                         compositionBody={(
@@ -1000,12 +1002,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                                             <Field label="专属负面">
                                                 <Textarea disabled={!canEdit} value={char.negativePrompt || ''} onChange={(e) => updateCharacter(idx, { negativePrompt: e.target.value })} />
                                             </Field>
-                                            <div className={cx('param-grid', 'coord-fields', !(params.useCoords ?? true) && 'is-off')}>
+                                            <div className={cx('param-grid', 'coord-fields', !params.useCoords && 'is-off')}>
                                                 <Field label="Center X">
-                                                    <Input type="number" step="0.1" min={0} max={1} disabled={!canEdit || !(params.useCoords ?? true)} value={char.x} onChange={(e) => updateCharacter(idx, { x: parseFloat(e.target.value) })} />
+                                                    <Input type="number" step="0.1" min={0} max={1} disabled={!canEdit || !params.useCoords} value={char.x} onChange={(e) => updateCharacter(idx, { x: parseFloat(e.target.value) })} />
                                                 </Field>
                                                 <Field label="Center Y">
-                                                    <Input type="number" step="0.1" min={0} max={1} disabled={!canEdit || !(params.useCoords ?? true)} value={char.y} onChange={(e) => updateCharacter(idx, { y: parseFloat(e.target.value) })} />
+                                                    <Input type="number" step="0.1" min={0} max={1} disabled={!canEdit || !params.useCoords} value={char.y} onChange={(e) => updateCharacter(idx, { y: parseFloat(e.target.value) })} />
                                                 </Field>
                                             </div>
                                         </div>
@@ -1341,6 +1343,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, curr
                 </div>
                 </Portal>
             )}
+            <AddCharacterPicker
+                open={addCharOpen}
+                onClose={() => setAddCharOpen(false)}
+                onPick={addCharacter}
+            />
             <ApiKeySheet open={keySheetOpen} onClose={() => setKeySheetOpen(false)} />
         </div>
     );

@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 export const APP_REPO_URL = 'https://github.com/kirafishy/NaiPromptManager';
 export const APP_DISCORD_URL = 'https://discord.com/channels/1134557553011998840/1469376867101311148/1469376867101311148';
 export const APP_NAME = 'NAI 咒语构建终端';

@@ -1195,6 +1195,10 @@ textarea.textarea.textarea-neg {
   }
 
   .sheet-handle { display: none; }
+
+  .sheet.add-char-sheet {
+    width: min(22rem, calc(100vw - 48px));
+  }
 }
 
 /* —— Toast：浮层 glass —— */

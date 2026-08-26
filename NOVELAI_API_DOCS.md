@@ -28,6 +28,8 @@ OpenAPI 真身：`https://image.novelai.net/docs/doc.json`（`/docs/index.html` 
 
 V5 请求体可沿用 V4 的 `v4_prompt` / `v4_negative_prompt`，无需新必填字段。旧 Chain 无 `model` 时按 V4.5。
 
+V5 官网会把提示词里 `"..."` / `「」` / `『』` / `“”` / `‘’` / `＂＂` 的句子自动提升成末尾 `teXt:` 块（多段空一行、**引号出现顺序倒序**，因为第一行画在画面顶部）。手写 `Text:` / `teXt:` 则不再自动抽。质量词仍含 `no text`，靠 `teXt:` 指定要写的字；本应用在 `buildGenerationPayload` 里对 V5 做同样变换。多角色默认 `use_coords: false`（AI 排位置）；手动坐标需显式打开。
+
 ---
 
 ## 2. 请求结构 (Request Payload)
@@ -44,7 +46,7 @@ V5 请求体可沿用 V4 的 `v4_prompt` / `v4_negative_prompt`，无需新必�
 #### 基础生成参数
 | 字段名 | 类型 | 描述 | 默认/常见值 |
 | :--- | :--- | :--- | :--- |
-| `params_version` | Number | 参数版本。V3/V4/V5 均为 3。 | `3` |
+| `params_version` | Number | 参数版本。V4.5 为 `3`，V5 官网为 `4`。 | `4` |
 | `width` | Number | 宽度。 | `832` |
 | `height` | Number | 高度。 | `1216` |
 | `scale` | Number | CFG Scale。 | `5` |
@@ -59,6 +61,7 @@ V5 请求体可沿用 V4 的 `v4_prompt` / `v4_negative_prompt`，无需新必�
 | `skip_cfg_above_sigma` | Number \| null | Variety+：`58` 开，`null` 关。 |
 | `cfg_rescale` | Number | CFG Rescale，0.0–1.0。 |
 | `qualityToggle` | Boolean | UI 状态。画质词在 `input` 拼接，请求仍携带。 |
+| `tag_hint_qt` | Number | V5 画质开时发 `1`（官网 Standard）。关则不发。 |
 | `ucPreset` | Number | UI 状态。0 Heavy / 1 Light / 2 Furry / 3 Human / 4 None。 |
 | `v4_prompt` | Object | 结构化正面提示。V5 字段名仍是 `v4_*`。 |
 | `v4_negative_prompt` | Object | 结构化负面提示。 |
@@ -139,7 +142,7 @@ V5 + 透明 Straight（zip 或 stream 体相同；stream 再加 `"stream": "sse"
   "model": "nai-diffusion-5-full",
   "action": "generate",
   "parameters": {
-    "params_version": 3,
+    "params_version": 4,
     "width": 832,
     "height": 1216,
     "scale": 5,

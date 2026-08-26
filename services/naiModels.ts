@@ -42,6 +42,7 @@ export const DEFAULT_NAI_PARAMS: NAIParams = {
   qualityToggle: true,
   ucPreset: 4,
   characters: [],
+  useCoords: false,
   model: NAI_MODELS.V4_5_FULL,
   stream: false,
   transparent: false,

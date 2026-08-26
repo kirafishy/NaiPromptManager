@@ -238,10 +238,16 @@ export const parseNovelAIMetadata = (
 
     // ========== 后处理：隐式参数逆向反推 ==========
 
-    // 1. Quality Tags 后缀侦测与剥离
-    if (prompt.endsWith(NAI_QUALITY_TAGS)) {
-        newParams.qualityToggle = true;
-        prompt = prompt.substring(0, prompt.length - NAI_QUALITY_TAGS.length);
+    // 1. Quality Tags 后缀侦测与剥离（V5 自动 teXt 块会接在质量词后面）
+    const qualityIdx = prompt.lastIndexOf(NAI_QUALITY_TAGS);
+    if (qualityIdx >= 0) {
+        const afterQuality = prompt.slice(qualityIdx + NAI_QUALITY_TAGS.length);
+        if (afterQuality === '' || /^, teXt\s*:/i.test(afterQuality) || /^\s*\nteXt\s*:/i.test(afterQuality)) {
+            newParams.qualityToggle = true;
+            prompt = prompt.slice(0, qualityIdx) + afterQuality;
+        } else {
+            newParams.qualityToggle = false;
+        }
     } else {
         newParams.qualityToggle = false;
     }

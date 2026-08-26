@@ -2,6 +2,29 @@ import type { NAIParams, ResolvedVibe } from '../types';
 import { isV5Model, resolveNaiModel, withTransparentTags } from './naiModels';
 import { NAI_QUALITY_TAGS, NAI_UC_PRESETS } from './promptUtils';
 
+/** 官网已手写 `Text:` / `teXt:` 时不再自动抽取引号。 */
+const HAS_TEXT_BLOCK = /(?:^|[\n,])\s*text\s*:/i;
+
+/** ASCII、中文弯引号、全角引号、直角引号。 */
+const QUOTED_TEXT = /"([^"\n]+)"|「([^」\n]+)」|『([^』\n]+)』|“([^”\n]+)”|‘([^’\n]+)’|＂([^＂\n]+)＂/g;
+
+/**
+ * V5 官网会把引号里的句子提升成末尾的 `teXt:` 块，否则质量词里的 `no text`
+ * 会把对话框打成乱码。多段之间空一行；引号出现顺序会倒过来（末句在上），
+ * 因为 `teXt:` 第一行渲染在画面顶部。已有 Text 块则原样返回。
+ */
+export const applyV5AutoText = (prompt: string): string => {
+  if (HAS_TEXT_BLOCK.test(prompt)) return prompt;
+  const quoted: string[] = [];
+  QUOTED_TEXT.lastIndex = 0;
+  for (const match of prompt.matchAll(QUOTED_TEXT)) {
+    const text = match.slice(1).find(Boolean)?.trim() ?? '';
+    if (text) quoted.push(text);
+  }
+  if (quoted.length === 0) return prompt;
+  return `${prompt}, teXt: ${quoted.reverse().join('\n\n')}`;
+};
+
 interface NAICharCaption {
   char_caption: string;
   centers: Array<{ x: number; y: number }>;
@@ -52,6 +75,7 @@ export interface NAIImageGenerationParameters {
   stream?: 'sse' | 'msgpack';
   straight_alpha?: boolean;
   tag_hint_transparent_background?: boolean;
+  tag_hint_qt?: number;
 }
 
 export interface NAIImageGenerationPayload {
@@ -72,13 +96,15 @@ export const buildGenerationPayload = (
     : undefined;
 
   const model = resolveNaiModel(params);
-  const useTransparent = isV5Model(params) && !!params.transparent;
+  const v5 = isV5Model(params);
+  const useTransparent = v5 && !!params.transparent;
 
   let finalPrompt = prompt;
   if (useTransparent) finalPrompt = withTransparentTags(finalPrompt);
   if (params.qualityToggle ?? true) {
     finalPrompt += NAI_QUALITY_TAGS;
   }
+  if (v5) finalPrompt = applyV5AutoText(finalPrompt);
 
   let finalNegative = negative;
   const presetId = params.ucPreset ?? 0;
@@ -88,7 +114,6 @@ export const buildGenerationPayload = (
   }
 
   const characters = params.characters ?? [];
-  const hasCharacters = characters.length > 0;
   const charCaptions = characters.map(character => ({
     char_caption: character.prompt,
     centers: [{ x: character.x, y: character.y }],
@@ -99,7 +124,7 @@ export const buildGenerationPayload = (
   }));
 
   const parameters: NAIImageGenerationParameters = {
-    params_version: 3,
+    params_version: v5 ? 4 : 3,
     width: params.width,
     height: params.height,
     scale: params.scale,
@@ -124,7 +149,7 @@ export const buildGenerationPayload = (
         base_caption: finalPrompt,
         char_captions: charCaptions,
       },
-      use_coords: params.useCoords ?? hasCharacters,
+      use_coords: params.useCoords ?? false,
       use_order: true,
     },
     v4_negative_prompt: {
@@ -139,6 +164,7 @@ export const buildGenerationPayload = (
   };
 
   if (params.stream) parameters.stream = 'sse';
+  if (v5 && (params.qualityToggle ?? true)) parameters.tag_hint_qt = 1;
   if (useTransparent) {
     parameters.tag_hint_transparent_background = true;
     parameters.straight_alpha = params.alphaMode !== 'premultiplied';
