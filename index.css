@@ -4868,6 +4868,34 @@ svg.w-8 {
 .data-table .vip-row { background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .data-table .guest-row { background: color-mix(in srgb, var(--warn) 7%, transparent); }
 
+.user-list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-list-tools .search {
+  width: min(280px, 100%);
+  flex: 1 1 200px;
+}
+
+.user-list-tools .select {
+  width: auto;
+  min-width: 148px;
+  flex: 0 0 auto;
+}
+
+.user-list-meta {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--mute);
+}
+
+.user-pager {
+  margin-top: 12px;
+}
+
 .role-pill {
   display: inline-flex;
   align-items: center;

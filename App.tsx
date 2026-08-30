@@ -39,13 +39,11 @@ const App = () => {
   // Data Cache State
   const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
-  const [usersCache, setUsersCache] = useState<User[] | null>(null);
 
   // Cache Timestamps
   const [lastChainFetch, setLastChainFetch] = useState(0);
   const [lastArtistFetch, setLastArtistFetch] = useState(0);
   const [lastInspirationFetch, setLastInspirationFetch] = useState(0);
-  const [lastUserFetch, setLastUserFetch] = useState(0);
 
   // Dirty State for Navigation Guard
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -135,19 +133,10 @@ const App = () => {
     setLastInspirationFetch(Date.now());
   };
 
-  const loadUsers = async (force = false) => {
-    if (!currentUser || currentUser.role !== 'admin') return;
-    if (!force && usersCache && Date.now() - lastUserFetch < CACHE_TTL) return;
-    const data = await db.getUsers();
-    setUsersCache(data);
-    setLastUserFetch(Date.now());
-  };
-
   const prefetchView = async (next: ViewState) => {
     if (next === 'list' || next === 'characters' || next === 'edit') await refreshData();
     if (next === 'library' || next === 'admin') await loadArtists();
     if (next === 'inspiration') await loadInspirations();
-    if (next === 'admin' && currentUser?.role === 'admin') await loadUsers();
     if (next === 'playground') ensurePlayground();
   };
 
@@ -221,7 +210,6 @@ const App = () => {
     // Clear all cache to prevent stale data after role switch
     setChains([]);
     setLastChainFetch(0);
-    setUsersCache(null);
     setInspirationsCache(null);
     // Reset view to list to prevent guest from staying in admin view
     navigate(pathFor('list'), { replace: true });
@@ -339,9 +327,7 @@ const App = () => {
         return <ArtistAdmin
           currentUser={currentUser}
           artistsData={artistsCache}
-          usersData={usersCache}
           onRefreshArtists={() => loadArtists(true)}
-          onRefreshUsers={() => loadUsers(true)}
         />;
       case 'history':
         return <GenHistory currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground')} onRefreshInspiration={() => loadInspirations(true)} />;

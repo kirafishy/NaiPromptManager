@@ -2,35 +2,100 @@
 
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_VERSION } from '../app/version';
 import { STALE_GUEST_IDLE_MS } from '../config/staleUsers';
+import { USER_LIST_DEFAULT_PAGE_SIZE } from '../config/userListQuery';
 import { ThemeProvider } from '../theme';
 import type { Artist, User } from '../types';
 import { FeedbackProvider } from './ui/Feedback';
 import { ArtistAdmin } from './ArtistAdmin';
+
+const dbMocks = vi.hoisted(() => ({
+  getUsers: vi.fn(),
+  updateUserRole: vi.fn(async () => ({ success: true, role: 'user', maxStorage: 0 })),
+  createUser: vi.fn(async () => {}),
+  deleteUser: vi.fn(async () => {}),
+  updateUserQuota: vi.fn(async () => {}),
+  demoteStaleUsers: vi.fn(async () => ({ success: true, count: 0 })),
+  getUsageStats: vi.fn(async () => null),
+  clearOldLogs: vi.fn(async () => {}),
+  updatePassword: vi.fn(async () => {}),
+  importArtistFromGithub: vi.fn(async () => {}),
+  saveArtist: vi.fn(async () => {}),
+  deleteArtist: vi.fn(async () => {}),
+}));
+
+vi.mock('../services/dbService', () => ({
+  db: dbMocks,
+}));
 
 afterEach(cleanup);
 
 const guest: User = { id: 'g', username: 'visitor', role: 'guest', createdAt: 0 };
 const admin: User = { id: 'a', username: 'admin', role: 'admin', createdAt: 0 };
 
+function makeUser(partial: Partial<User> & Pick<User, 'id' | 'username'>): User {
+  return {
+    role: 'user',
+    createdAt: 1,
+    storageUsage: 0,
+    maxStorage: 300 * 1024 * 1024,
+    ...partial,
+  };
+}
+
+function paginateUsers(all: User[], opts: { page?: number; pageSize?: number; q?: string; role?: string } = {}) {
+  const page = opts.page ?? 1;
+  const pageSize = opts.pageSize ?? USER_LIST_DEFAULT_PAGE_SIZE;
+  const q = (opts.q ?? '').toLowerCase();
+  const role = opts.role ?? '';
+  let rows = all;
+  if (q) {
+    rows = rows.filter((u) =>
+      u.username.toLowerCase().includes(q) || (u.discordUsername || '').toLowerCase().includes(q),
+    );
+  }
+  if (role) rows = rows.filter((u) => u.role === role);
+  const total = rows.length;
+  const start = (page - 1) * pageSize;
+  return {
+    data: rows.slice(start, start + pageSize),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize) || 0,
+    },
+  };
+}
+
+function seedUsers(all: User[]) {
+  dbMocks.getUsers.mockImplementation(async (opts) => paginateUsers(all, opts));
+}
+
 function renderAdmin(user: User, usersData: User[] = [], artistsData: Artist[] = []) {
+  seedUsers(usersData);
   return render(
     <ThemeProvider>
       <FeedbackProvider>
         <ArtistAdmin
           currentUser={user}
           artistsData={artistsData}
-          usersData={usersData}
           onRefreshArtists={vi.fn(async () => {})}
-          onRefreshUsers={vi.fn(async () => {})}
         />
       </FeedbackProvider>
     </ThemeProvider>,
   );
+}
+
+async function openUsersTab() {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: '用户管理' }));
+  await waitFor(() => expect(dbMocks.getUsers).toHaveBeenCalled());
+  return user;
 }
 
 function settingsTabs() {
@@ -38,6 +103,11 @@ function settingsTabs() {
 }
 
 describe('ArtistAdmin tabs', () => {
+  beforeEach(() => {
+    dbMocks.getUsers.mockReset();
+    seedUsers([]);
+  });
+
   it('关于在标签最后，偏好设置顺序是账号、偏好、外观', () => {
     renderAdmin(guest);
     expect(settingsTabs().map((tab) => tab.textContent)).toEqual(['偏好设置', '关于']);
@@ -67,25 +137,20 @@ describe('ArtistAdmin tabs', () => {
   });
 
   it('用户管理可选游客，并提供批量改回游客', async () => {
-    const user = userEvent.setup();
-    const alice: User = {
+    const alice = makeUser({
       id: 'u1',
       username: 'alice',
-      role: 'user',
-      createdAt: 1,
       lastLogin: Date.now() - STALE_GUEST_IDLE_MS - 1000,
-      storageUsage: 0,
-      maxStorage: 300 * 1024 * 1024,
-    };
+    });
     renderAdmin(admin, [alice]);
-    await user.click(screen.getByRole('tab', { name: '用户管理' }));
-    const role = screen.getByRole('combobox', { name: 'alice 的角色' });
+    await openUsersTab();
+    const role = await screen.findByRole('combobox', { name: 'alice 的角色' });
     expect(role).toHaveClass('role-select');
     expect(role).not.toHaveClass('role-pill');
     expect(within(role).getByRole('option', { name: '游客' })).toBeInTheDocument();
     expect(within(role).getByRole('option', { name: '普通用户' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '批量改回游客' })).toBeInTheDocument();
-    expect(screen.getByText(/当前列表中有 1 人符合/)).toBeInTheDocument();
+    expect(screen.getByText(/作用于全库/)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Discord 游客' })).toBeNull();
   });
 
@@ -107,26 +172,16 @@ describe('ArtistAdmin tabs', () => {
   });
 
   it('游客不显示存储配额和修改配额', async () => {
-    const user = userEvent.setup();
-    const visitor: User = {
+    const visitor = makeUser({
       id: 'g1',
       username: '暮春',
       role: 'guest',
-      createdAt: 1,
-      storageUsage: 0,
       maxStorage: 100 * 1024 * 1024,
-    };
-    const alice: User = {
-      id: 'u1',
-      username: 'alice',
-      role: 'user',
-      createdAt: 1,
-      storageUsage: 0,
-      maxStorage: 300 * 1024 * 1024,
-    };
+    });
+    const alice = makeUser({ id: 'u1', username: 'alice' });
     renderAdmin(admin, [visitor, alice]);
-    await user.click(screen.getByRole('tab', { name: '用户管理' }));
-    const guestRow = screen.getByText('暮春').closest('tr');
+    await openUsersTab();
+    const guestRow = (await screen.findByText('暮春')).closest('tr');
     const userRow = screen.getByText('alice').closest('tr');
     expect(guestRow).toBeTruthy();
     expect(userRow).toBeTruthy();
@@ -149,5 +204,55 @@ describe('ArtistAdmin tabs', () => {
     const name = screen.getByText(longName);
     expect(name).toHaveAttribute('title', longName);
     expect(name.closest('.artist-admin-name')).toBeTruthy();
+  });
+
+  it('用户管理可按用户名或 Discord 名搜索', async () => {
+    const alice = makeUser({ id: 'u1', username: 'alice' });
+    const bob = makeUser({ id: 'u2', username: 'bob', role: 'vip' });
+    const dusk = makeUser({ id: 'g1', username: '暮春', role: 'guest', discordUsername: 'kira_fish' });
+    renderAdmin(admin, [alice, bob, dusk]);
+    const user = await openUsersTab();
+    await screen.findByText('alice');
+    await user.type(screen.getByRole('searchbox', { name: '搜索用户' }), 'kira');
+    await waitFor(() => {
+      expect(screen.getByText('暮春')).toBeInTheDocument();
+      expect(screen.queryByText('alice')).toBeNull();
+      expect(screen.queryByText('bob')).toBeNull();
+    });
+    expect(dbMocks.getUsers).toHaveBeenCalledWith(expect.objectContaining({ q: 'kira', page: 1 }));
+  });
+
+  it('用户管理可按权限组筛选', async () => {
+    const alice = makeUser({ id: 'u1', username: 'alice' });
+    const bob = makeUser({ id: 'u2', username: 'bob', role: 'vip' });
+    const dusk = makeUser({ id: 'g1', username: '暮春', role: 'guest' });
+    renderAdmin(admin, [alice, bob, dusk]);
+    const user = await openUsersTab();
+    await screen.findByText('alice');
+    await user.selectOptions(screen.getByRole('combobox', { name: '按权限组筛选' }), 'vip');
+    await waitFor(() => {
+      expect(screen.getByText('bob')).toBeInTheDocument();
+      expect(screen.queryByText('alice')).toBeNull();
+      expect(screen.queryByText('暮春')).toBeNull();
+    });
+    expect(dbMocks.getUsers).toHaveBeenCalledWith(expect.objectContaining({ role: 'vip', page: 1 }));
+  });
+
+  it('用户管理超过一页时可以翻页', async () => {
+    const many = Array.from({ length: 25 }, (_, i) =>
+      makeUser({ id: `u${i + 1}`, username: `user${String(i + 1).padStart(2, '0')}`, createdAt: 25 - i }),
+    );
+    renderAdmin(admin, many);
+    const user = await openUsersTab();
+    await screen.findByText('user01');
+    expect(screen.getByText('user20')).toBeInTheDocument();
+    expect(screen.queryByText('user21')).toBeNull();
+    expect(screen.getByText(/共 25 人/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => {
+      expect(screen.getByText('user21')).toBeInTheDocument();
+      expect(screen.queryByText('user01')).toBeNull();
+    });
+    expect(dbMocks.getUsers).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
   });
 });

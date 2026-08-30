@@ -3,6 +3,12 @@ import bcrypt from 'bcryptjs';
 import { APP_REPO_URL, APP_VERSION } from '../app/version';
 import { STALE_GUEST_IDLE_MS } from '../config/staleUsers';
 import {
+  buildUserListWhere,
+  parseUserListQuery,
+  userListOffset,
+  userListTotalPages,
+} from '../config/userListQuery';
+import {
   discordAuthorizeUrl,
   exchangeDiscordCode,
   fetchDiscordIdentity,
@@ -875,21 +881,24 @@ export default {
       }
       if (path === '/api/users' && method === 'GET') {
           if (currentUser.role !== 'admin') return error('Forbidden', 403);
-          
-          // 支持分页参数
-          const page = parseInt(url.searchParams.get('page') || '0');
-          const pageSize = Math.min(parseInt(url.searchParams.get('pageSize') || '50'), 100); // 最大100条
-          const offset = page * pageSize;
-          
-          // 获取总数
-          const countResult = await db.prepare('SELECT COUNT(*) as total FROM users').first<{total: number}>();
+
+          const query = parseUserListQuery({
+              page: url.searchParams.get('page'),
+              pageSize: url.searchParams.get('pageSize'),
+              q: url.searchParams.get('q'),
+              role: url.searchParams.get('role'),
+          });
+          const where = buildUserListWhere(query);
+          const countStmt = db.prepare(`SELECT COUNT(*) as total FROM users ${where.sql}`);
+          const countResult = where.binds.length
+              ? await countStmt.bind(...where.binds).first<{total: number}>()
+              : await countStmt.first<{total: number}>();
           const total = countResult?.total || 0;
-          
-          // 分页查询
-          const res = await db.prepare('SELECT id, username, role, created_at, last_login, storage_usage, max_storage, discord_id, discord_username FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?')
-            .bind(pageSize, offset).all();
-          
-          // 将数据库字段名（下划线）映射为前端字段名（驼峰）
+          const offset = userListOffset(query);
+          const listSql = `SELECT id, username, role, created_at, last_login, storage_usage, max_storage, discord_id, discord_username FROM users ${where.sql} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+          const listStmt = db.prepare(listSql);
+          const res = await listStmt.bind(...where.binds, query.pageSize, offset).all();
+
           return json({
               data: res.results.map((u: any) => ({
                   id: u.id,
@@ -903,10 +912,10 @@ export default {
                   discordUsername: u.discord_username || null,
               })),
               pagination: {
-                  page,
-                  pageSize,
+                  page: query.page,
+                  pageSize: query.pageSize,
                   total,
-                  totalPages: Math.ceil(total / pageSize)
+                  totalPages: userListTotalPages(total, query.pageSize),
               }
           });
       }

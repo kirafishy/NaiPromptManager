@@ -1,9 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../services/dbService';
-import { Artist, User, UsageStats, AccessLog, DailyStat } from '../types';
+import { Artist, User, UserRole, UsageStats, AccessLog, DailyStat } from '../types';
 import { ROLE_POLICY } from '../config/rolePolicy';
-import { isStaleZeroQuotaUser } from '../config/staleUsers';
+import {
+  USER_LIST_DEFAULT_PAGE_SIZE,
+  USER_LIST_ROLE_FILTERS,
+  userListPageButtons,
+} from '../config/userListQuery';
 import { AboutPage } from './AboutPage';
 import { AppearanceSettings } from './AppearanceSettings';
 import { ApiKeyFields, Button, Empty, Field, IconButton, IconChart, IconCrown, IconDiscord, IconInbox, IconPackage, IconPalette, IconPencil, IconTrash, IconUser, Input, Panel, Seg, Select, Switch } from './ui';
@@ -18,13 +22,11 @@ const ARTIST_WEIGHT_SYNTAX_CHANGE_EVENT = 'naipm-artist-weight-syntax-change';
 interface ExtendedArtistAdminProps {
     currentUser: User;
     artistsData: Artist[] | null;
-    usersData: User[] | null;
     onRefreshArtists: () => Promise<void>;
-    onRefreshUsers: () => Promise<void>;
 }
 
 export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
-    currentUser, artistsData, usersData, onRefreshArtists, onRefreshUsers,
+    currentUser, artistsData, onRefreshArtists,
 }) => {
   const { toast, confirm } = useFeedback();
   // 使用统一的角色策略
@@ -35,10 +37,22 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
   
   // Artist State (Managed via props now, filtered here if needed)
   const artists = artistsData || [];
-  
-  // User Management State
-  const users = usersData || [];
-  
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [userSearchInput, setUserSearchInput] = useState('');
+  const [userListParams, setUserListParams] = useState<{ q: string; role: UserRole | ''; page: number }>({
+      q: '',
+      role: '',
+      page: 1,
+  });
+  const [userPagination, setUserPagination] = useState({
+      page: 1,
+      pageSize: USER_LIST_DEFAULT_PAGE_SIZE,
+      total: 0,
+      totalPages: 0,
+  });
+  const [usersReady, setUsersReady] = useState(false);
+
   const [artistName, setArtistName] = useState('');
   const [artistImg, setArtistImg] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -103,10 +117,47 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  const loadUsers = useCallback(async () => {
+      if (!isAdmin) return;
+      setIsLoading(true);
+      try {
+          const res = await db.getUsers({
+              page: userListParams.page,
+              pageSize: USER_LIST_DEFAULT_PAGE_SIZE,
+              q: userListParams.q || undefined,
+              role: userListParams.role || undefined,
+          });
+          setUsers(res.data);
+          setUserPagination(res.pagination);
+          if (res.pagination.totalPages > 0 && userListParams.page > res.pagination.totalPages) {
+              setUserListParams(prev => ({ ...prev, page: res.pagination.totalPages }));
+          }
+      } catch {
+          toast('加载用户列表失败', 'error');
+      } finally {
+          setIsLoading(false);
+          setUsersReady(true);
+      }
+  }, [isAdmin, userListParams]);
+
+  useEffect(() => {
+      const t = window.setTimeout(() => {
+          const q = userSearchInput.trim();
+          setUserListParams(prev => (prev.q === q ? prev : { ...prev, q, page: 1 }));
+      }, 300);
+      return () => window.clearTimeout(t);
+  }, [userSearchInput]);
+
+  useEffect(() => {
+      if (isAdmin && activeTab === 'users') {
+          void loadUsers();
+      }
+  }, [isAdmin, activeTab, loadUsers]);
+
   const handleRefresh = async () => {
       setIsLoading(true);
       if (activeTab === 'artist') await onRefreshArtists();
-      if (activeTab === 'users') await onRefreshUsers();
+      if (activeTab === 'users') await loadUsers();
       setIsLoading(false);
   };
 
@@ -161,7 +212,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       try {
         await db.createUser(newUsername, newPassword);
         setNewUsername(''); setNewPassword('');
-        await onRefreshUsers();
+        await loadUsers();
         toast('用户创建成功', 'success');
       } catch(e) { toast('创建失败：用户名可能已存在', 'error'); }
       setIsLoading(false);
@@ -172,7 +223,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       if (!ok) return;
       setIsLoading(true);
       await db.deleteUser(id);
-      await onRefreshUsers();
+      await loadUsers();
       setIsLoading(false);
   };
 
@@ -194,7 +245,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       setIsLoading(true);
       try {
           await db.updateUserQuota(userId, bytes);
-          await onRefreshUsers();
+          await loadUsers();
           setEditingQuotaUserId(null);
           setNewQuotaMB('');
           toast('配额更新成功', 'success');
@@ -291,7 +342,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
       setIsLoading(true);
       try {
           const { count } = await db.demoteStaleUsers();
-          await onRefreshUsers();
+          await loadUsers();
           toast(count ? `已将 ${count} 名用户改回游客` : '没有符合条件的用户', count ? 'success' : 'info');
       } catch (e) {
           toast('批量更新失败', 'error');
@@ -358,8 +409,6 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
           setIsImporting(false);
       }
   };
-
-  const staleUserCount = users.filter((u) => isStaleZeroQuotaUser(u, Date.now(), currentUser.id)).length;
 
   const tabOptions = [
       { value: 'profile' as const, label: '偏好设置' },
@@ -467,13 +516,50 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
 
                 <Panel title="批量改回游客">
                     <p className="hint">
-                        普通用户、15 天内未登录、且配额使用为 0 的账号。
-                        {staleUserCount > 0 ? ` 当前列表中有 ${staleUserCount} 人符合。` : ' 当前列表中没有符合的账号。'}
+                        普通用户、15 天内未登录、且配额使用为 0 的账号。此操作作用于全库，不受下方搜索与筛选影响。
                     </p>
                     <div className="sheet-foot">
                         <Button onClick={handleBatchDemote} disabled={isLoading}>批量改回游客</Button>
                     </div>
                 </Panel>
+
+                <div className="user-list-tools">
+                    <div className="search">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3-3" /></svg>
+                        <Input
+                            type="search"
+                            value={userSearchInput}
+                            onChange={e => setUserSearchInput(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key !== 'Enter') return;
+                                e.preventDefault();
+                                const q = userSearchInput.trim();
+                                setUserListParams(prev => (prev.q === q ? prev : { ...prev, q, page: 1 }));
+                            }}
+                            placeholder="搜索用户名 / Discord"
+                            aria-label="搜索用户"
+                        />
+                    </div>
+                    <Select
+                        aria-label="按权限组筛选"
+                        value={userListParams.role}
+                        onChange={e => {
+                            const role = e.target.value as UserRole | '';
+                            setUserListParams(prev => ({ ...prev, role, page: 1 }));
+                        }}
+                    >
+                        {USER_LIST_ROLE_FILTERS.map(opt => (
+                            <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </Select>
+                    <span className="user-list-meta">
+                        {!usersReady
+                            ? '加载中...'
+                            : userPagination.total > 0
+                                ? `共 ${userPagination.total} 人${userPagination.totalPages > 1 ? ` · ${userPagination.page}/${userPagination.totalPages} 页` : ''}`
+                                : '没有符合条件的用户'}
+                    </span>
+                </div>
 
                 <div className="page-scroll" style={{ overflowX: 'auto' }}>
                     <table className="data-table">
@@ -504,7 +590,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                                                 const newRole = e.target.value;
                                                 try {
                                                     await db.updateUserRole(u.id, newRole, newRole === 'guest');
-                                                    await onRefreshUsers();
+                                                    await loadUsers();
                                                     toast(`已将 ${u.username} 设为${ROLE_POLICY.getRoleDisplayName(newRole as User['role'])}`, 'success');
                                                 } catch (err) {
                                                     toast('角色更新失败', 'error');
@@ -571,7 +657,30 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                             })}
                         </tbody>
                     </table>
+                    {users.length === 0 && usersReady && !isLoading && (
+                        <Empty title="没有符合条件的用户" />
+                    )}
                 </div>
+                {userPagination.totalPages > 1 && (
+                    <div className="user-pager hist-pager surface">
+                        <div className="hist-pages">
+                            <Button size="sm" variant="ghost" onClick={() => setUserListParams(prev => ({ ...prev, page: 1 }))} disabled={userListParams.page === 1 || isLoading}>首页</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setUserListParams(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))} disabled={userListParams.page === 1 || isLoading}>上一页</Button>
+                            {userListPageButtons(userListParams.page, userPagination.totalPages).map(page => (
+                                <Button
+                                    key={page}
+                                    size="sm"
+                                    variant={page === userListParams.page ? 'primary' : 'ghost'}
+                                    onClick={() => setUserListParams(prev => ({ ...prev, page }))}
+                                >
+                                    {page}
+                                </Button>
+                            ))}
+                            <Button size="sm" variant="ghost" onClick={() => setUserListParams(prev => ({ ...prev, page: Math.min(userPagination.totalPages, prev.page + 1) }))} disabled={userListParams.page === userPagination.totalPages || isLoading}>下一页</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setUserListParams(prev => ({ ...prev, page: userPagination.totalPages }))} disabled={userListParams.page === userPagination.totalPages || isLoading}>末页</Button>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 

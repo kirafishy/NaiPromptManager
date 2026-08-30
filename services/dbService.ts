@@ -1,6 +1,26 @@
 
+import { userListQueryString } from '../config/userListQuery';
 import { PromptChain, Artist, Inspiration, User, ChainType, UsageStats, VibePreset, SharedVibeListItem } from '../types';
 import { api } from './api';
+
+export type UserListPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type UserListResult = {
+  data: User[];
+  pagination: UserListPagination;
+};
+
+export type UserListRequest = {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  role?: string;
+};
 
 class DBService {
   // --- Auth ---
@@ -35,10 +55,25 @@ class DBService {
     await api.post('/users', { username, password });
   }
 
-  async getUsers(): Promise<User[]> {
-    const res = await api.get('/users');
-    // 兼容后端返回的分页格式 {data: [...], pagination: {...}}
-    return Array.isArray(res) ? res : (res.data || []);
+  async getUsers(opts: UserListRequest = {}): Promise<UserListResult> {
+    const res = await api.get(`/users?${userListQueryString(opts)}`);
+    if (Array.isArray(res)) {
+      return {
+        data: res,
+        pagination: { page: 1, pageSize: res.length, total: res.length, totalPages: res.length ? 1 : 0 },
+      };
+    }
+    const data = Array.isArray(res?.data) ? res.data : [];
+    const pagination = res?.pagination || {};
+    return {
+      data,
+      pagination: {
+        page: Number(pagination.page) || 1,
+        pageSize: Number(pagination.pageSize) || data.length || 20,
+        total: Number(pagination.total) || data.length,
+        totalPages: Number(pagination.totalPages) || 0,
+      },
+    };
   }
 
   async deleteUser(id: string): Promise<void> {
