@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { subscribeApiEndpoint } from '../services/apiEndpointStore';
 import { hasApiKey, subscribeApiKey } from '../services/apiKeyStore';
 import { getNaiSubscription, refreshNaiAccount, subscribeNaiAccount } from '../services/naiAccountStore';
 
@@ -12,11 +13,13 @@ export const AnlasChip: React.FC<{ compact?: boolean }> = ({ compact }) => {
     };
     const unsubAccount = subscribeNaiAccount(sync);
     const unsubKey = subscribeApiKey(() => { void refreshNaiAccount(); });
+    const unsubEndpoint = subscribeApiEndpoint(() => { void refreshNaiAccount(); });
     sync();
     if (hasApiKey()) void refreshNaiAccount();
     return () => {
       unsubAccount();
       unsubKey();
+      unsubEndpoint();
     };
   }, []);
 

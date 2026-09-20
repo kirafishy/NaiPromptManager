@@ -45,6 +45,8 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(function S
       <input
         ref={ref}
         type="checkbox"
+        role="switch"
+        aria-checked={typeof props.checked === 'boolean' ? props.checked : undefined}
         {...props}
         onChange={(e) => {
           onChange?.(e);

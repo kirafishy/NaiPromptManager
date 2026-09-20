@@ -4666,6 +4666,9 @@ svg.w-8 {
   .account-pair .account-api-key {
     grid-column: 1 / -1;
   }
+  .settings-api-endpoint {
+    grid-column: 1 / -1;
+  }
 }
 
 .settings-pair .sheet-foot {

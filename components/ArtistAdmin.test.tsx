@@ -117,6 +117,8 @@ describe('ArtistAdmin tabs', () => {
     expect(account.compareDocumentPosition(prefs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prefs.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole('heading', { name: '产品信息' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'API 端点' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '自定义端点' })).toBeInTheDocument();
   });
 
   it('管理员标签顺序是偏好 / 画师 / 用户 / 统计 / 关于', async () => {

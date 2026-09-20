@@ -10,6 +10,7 @@ import {
 } from '../config/userListQuery';
 import { AboutPage } from './AboutPage';
 import { AppearanceSettings } from './AppearanceSettings';
+import { ApiEndpointSettings } from './ApiEndpointSettings';
 import { ApiKeyFields, Button, Empty, Field, IconButton, IconChart, IconCrown, IconDiscord, IconInbox, IconPackage, IconPalette, IconPencil, IconTrash, IconUser, Input, Panel, Seg, Select, Switch } from './ui';
 import { useFeedback } from './ui/Feedback';
 import { cx } from './ui/cx';
@@ -896,6 +897,7 @@ export const ArtistAdmin: React.FC<ExtendedArtistAdminProps> = ({
                                 ]}
                             />
                         </Panel>
+                        <ApiEndpointSettings />
                     </div>
                 </section>
                 <AppearanceSettings />

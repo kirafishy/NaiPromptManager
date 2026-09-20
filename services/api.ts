@@ -1,7 +1,10 @@
+import {
+  getEffectiveApiEndpoint,
+  isCustomEndpointEnabled,
+} from './apiEndpointStore';
+
 // Base API URL
 const API_BASE = '/api';
-const NAI_API_URL = 'https://image.novelai.net/ai/generate-image';
-const NAI_STREAM_URL = 'https://image.novelai.net/ai/generate-image-stream';
 
 // 本地模式下 /generate 端点需绕过 Worker 代理直接调用 NAI API
 // 原因：Wrangler pages dev 本地开发时 Worker 代理会产生报错
@@ -30,6 +33,9 @@ const getHeaders = (extraHeaders?: Record<string, string>) => {
     'Content-Type': 'application/json',
     ...extraHeaders
   };
+  if (isCustomEndpointEnabled()) {
+    headers['x-custom-endpoint'] = getEffectiveApiEndpoint();
+  }
   return headers;
 };
 
@@ -111,7 +117,7 @@ export const api = {
     let url = `${API_BASE}${endpoint}`;
     
     if (LOCAL_BYPASS_ENDPOINTS.includes(endpoint) && isLocalMode()) {
-      url = NAI_API_URL;
+      url = `${getEffectiveApiEndpoint()}/ai/generate-image`;
     }
     
     const res = await fetch(url, {
@@ -131,7 +137,7 @@ export const api = {
   ) => {
     let url = `${API_BASE}${endpoint}`;
     if (LOCAL_BYPASS_ENDPOINTS.includes(endpoint) && isLocalMode()) {
-      url = NAI_STREAM_URL;
+      url = `${getEffectiveApiEndpoint()}/ai/generate-image-stream`;
     }
     const res = await fetch(url, {
       method: 'POST',

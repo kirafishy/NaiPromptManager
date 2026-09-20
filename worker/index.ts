@@ -17,6 +17,7 @@ import {
   verifyDiscordGuildMembership,
   type DiscordEnv,
 } from './discordOAuth';
+import { resolveNaiEndpoint } from './naiEndpoint';
 
 // Add missing D1 type definitions locally
 interface D1Result<T = unknown> {
@@ -98,7 +99,7 @@ const ROLE_POLICY = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie, Server-Timing',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie, Server-Timing, x-custom-endpoint',
   'Access-Control-Allow-Credentials': 'true',
 };
 
@@ -796,7 +797,8 @@ export default {
         const body = await request.json();
         const clientAuth = request.headers.get('Authorization'); 
         if (!clientAuth) return error('Missing API Key', 401);
-        const naiRes = await fetch("https://image.novelai.net/ai/generate-image", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": clientAuth }, body: JSON.stringify(body) });
+        const targetUrl = resolveNaiEndpoint(request, '/ai/generate-image');
+        const naiRes = await fetch(targetUrl, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": clientAuth }, body: JSON.stringify(body) });
         if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
         const blob = await naiRes.blob();
         return new Response(blob, { headers: { ...corsHeaders, 'Content-Type': 'application/zip' } });
@@ -806,7 +808,8 @@ export default {
         const body = await request.json();
         const clientAuth = request.headers.get('Authorization');
         if (!clientAuth) return error('Missing API Key', 401);
-        const naiRes = await fetch("https://image.novelai.net/ai/generate-image-stream", {
+        const targetUrl = resolveNaiEndpoint(request, '/ai/generate-image-stream');
+        const naiRes = await fetch(targetUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": clientAuth, "Accept": "text/event-stream" },
           body: JSON.stringify(body),
@@ -820,7 +823,8 @@ export default {
       if (path === '/api/nai/subscription' && method === 'GET') {
         const clientAuth = request.headers.get('Authorization');
         if (!clientAuth) return error('Missing API Key', 401);
-        const naiRes = await fetch("https://image.novelai.net/user/subscription", {
+        const targetUrl = resolveNaiEndpoint(request, '/user/subscription');
+        const naiRes = await fetch(targetUrl, {
           headers: { "Authorization": clientAuth, "Accept": "application/json" },
         });
         if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
